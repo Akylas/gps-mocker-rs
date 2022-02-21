@@ -1,0 +1,165 @@
+
+body {
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+}
+video {
+  object-fit: cover;
+  position: absolute;
+  min-width: 100%;
+  min-height: 100%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.drawer-container {
+  position: absolute;
+  min-width: 100%;
+  min-height: 100%;
+}
+.drawer-content {
+  padding: 10px;
+}
+.ui-container {
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+  position: absolute;
+}
+.drawer {
+  z-index: 2;
+}
+.map {
+  height: 100%;
+  width: 100%;
+  position: absolute !important;
+}
+#app-content {
+  position: absolute;
+  min-width: 100%;
+  min-height: 100%;
+  background: linear-gradient(180deg, rgba(161,216,232,1) 0%, rgba(236,236,236,1) 100%);
+
+}
+
+#map_button,
+#settings_button,
+#camera_button {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  outline: 0;
+  border: 0;
+  border-radius: 38px;
+  background-color: transparent;
+  cursor: pointer;
+  width: 74px;
+  height: 74px;
+  flex-shrink: 0;
+  mix-blend-mode: difference;
+}
+
+#map_button,
+#settings_button,
+#camera_button svg {
+  /* filter: grayscale(100%) invert(100%); */
+  mix-blend-mode: difference;
+  fill: #888;
+  transform: scale(1.5);
+}
+#settings_button {
+  right: 0px;
+  bottom: 0px;
+}
+
+#camera_button {
+  left: 0px;
+  bottom: 40px;
+}
+
+#map_button {
+  left: 0px;
+  bottom: 0px;
+}
+
+#compass {
+  position: absolute;
+  background: none;
+  border: none;
+  top: 0;
+  right: 0px;
+  opacity: 0.9;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  margin: 10px;
+}
+#compass_label {
+  position: absolute;
+  top: 10px;
+  right: 70px;
+  opacity: 0.9;
+}
+#compass svg {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  fill: #888;
+}
+#compass_slice {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  position: absolute;
+}
+
+#elevation {
+  position: absolute;
+  top: 40%;
+  left: -13vh;
+  width: 30vh;
+  overflow: hidden;
+  transform: rotate(270deg);
+}
+#selectedPeakHolder {
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: end;
+  flex-direction: row;
+  justify-content: center;
+}
+#selectedPeak {
+  pointer-events: all;
+  margin-bottom: 40px;
+  border-radius: 30px;
+  max-width: 70%;
+  padding: 6px;
+  background: #4465be94;
+  color: white;
+  display: flex;
+  align-items: center;
+  visibility: hidden;
+}
+
+#gotopeak_button {
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+}
+#selectedPeakLabel {
+  font: bold 16 Noto Sans;
+  padding: 2px 10px 2px 10px;
+  color: white;
+}
+#gotopeak_button svg {
+  color: white;
+  margin-right: 10px;
+}

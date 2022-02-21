@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html>
+    <style>
+        body {
+            margin: 0;
+            width: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+        }
+        video {
+            object-fit: cover;
+            position: absolute;
+            min-width: 100%;
+            min-height: 100%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .drawer {
+            display: none;
+        }
+        .drawer__overlay {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            z-index: 200;
+            opacity: 0;
+
+            transition: opacity 0.3s;
+            will-change: opacity;
+            background-color: #000;
+
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .drawer__header {
+            /* Optional */
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .drawer__close {
+            /* Optional */
+            margin: 0;
+            padding: 0;
+            border: none;
+            background-color: transparent;
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%0A%3Csvg width='15px' height='16px' viewBox='0 0 15 16' version='1.1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'%3E%3Cg id='Page-1' stroke='none' stroke-width='1' fill='none' fill-rule='evenodd'%3E%3Cg id='2.-Menu' transform='translate(-15.000000, -13.000000)' stroke='%23000000'%3E%3Cg id='Group' transform='translate(15.000000, 13.521000)'%3E%3Cpath d='M0,0.479000129 L15,14.2971819' id='Path-3'%3E%3C/path%3E%3Cpath d='M0,14.7761821 L15,-1.24344979e-14' id='Path-3'%3E%3C/path%3E%3C/g%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            margin-left: 1rem;
+        }
+
+        .drawer__wrapper {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            height: 100%;
+            width: 60%;
+            max-width: 300px;
+            z-index: 9999;
+            overflow: auto;
+
+            transition: transform 0.3s;
+            will-change: transform;
+            background-color: #fff;
+
+            display: flex;
+            flex-direction: column;
+
+            -webkit-transform: translate3d(103%, 0, 0);
+            transform: translate3d(103%, 0, 0); /* extra 3% because of box-shadow */
+
+            -webkit-overflow-scrolling: touch; /* enables momentum scrolling in iOS overflow elements */
+
+            /* Optional */
+            box-shadow: 0 2px 6px #777;
+        }
+
+        .drawer__content {
+            position: relative;
+            overflow-x: hidden;
+            overflow-y: auto;
+            height: 100%;
+            flex-grow: 1;
+            /* Optional */
+            padding: 1.5rem;
+        }
+
+        .drawer--left .drawer__wrapper {
+            left: 0;
+            right: auto;
+            -webkit-transform: translate3d(-100%, 0, 0);
+            transform: translate3d(-100%, 0, 0);
+        }
+
+        .drawer.is-active {
+            display: block;
+        }
+
+        .drawer.is-visible .drawer__wrapper {
+            -webkit-transform: translate3d(0, 0, 0);
+            transform: translate3d(0, 0, 0);
+        }
+
+        .drawer.is-visible .drawer__overlay {
+            opacity: 0.1;
+        }
+        #map_button,
+        #settings_button,
+        #camera_button {
+            position: absolute;
+            margin: 0;
+            padding: 0;
+            outline: 0;
+            border: 0;
+            border-radius: 38px;
+            background-color: transparent;
+            cursor: pointer;
+            width: 74px;
+            height: 74px;
+            flex-shrink: 0;
+            mix-blend-mode: difference;
+        }
+
+        #map_button,
+        #settings_button,
+        #camera_button svg {
+            /* filter: grayscale(100%) invert(100%); */
+            mix-blend-mode: difference;
+            fill: #888;
+            transform: scale(1.5);
+        }
+        #settings_button {
+            right: 0px;
+            bottom: 0px;
+        }
+
+        #camera_button {
+            left: 0px;
+            bottom: 40px;
+        }
+
+        #map_button {
+            left: 0px;
+            bottom: 0px;
+        }
+
+        #compass {
+            position: absolute;
+            background: none;
+            border: none;
+            z-index: 99;
+            top: 0;
+            right: 0px;
+            opacity: 0.9;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin: 10px;
+        }
+        #compass_label {
+            position: absolute;
+            top: 10px;
+            right: 70px;
+            opacity: 0.9;
+        }
+        #compass svg {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            fill: #888;
+        }
+        #compass_slice {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            position: absolute;
+        }
+
+        #elevation {
+            z-index: 1000;
+            position: absolute;
+            top: 40%;
+            left: -13vh;
+            width: 30vh;
+            overflow: hidden;
+            transform: rotate(270deg);
+        }
+        #selectedPeakHolder {
+            pointer-events: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: end;
+            flex-direction: row;
+            justify-content: center;
+        }
+        #selectedPeak {
+            pointer-events: all;
+            margin-bottom: 40px;
+            border-radius: 30px;
+            max-width: 70%;
+            padding: 6px;
+            background: #4465be94;
+            color: white;
+            display: flex;
+            align-items: center;
+            visibility: hidden;
+        }
+
+        #gotopeak_button {
+            border: none;
+            background-color: transparent;
+            cursor: pointer;
+        }
+        #selectedPeakLabel {
+            font: bold 16 Noto Sans;
+            padding: 2px 10px 2px 10px;
+            color: white;
+        }
+        #gotopeak_button svg {
+            color: white;
+            margin-right: 10px;
+        }
+    </style>
+    <head>
+        <meta id="Viewport" name="viewport" content="initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no" />
+        <title></title>
+      <script type="module" crossorigin src="/assets/index.eb823769.js"></script>
+      <link rel="modulepreload" href="/assets/vendor.1d39e390.js">
+    </head>
+    <body >
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" style="background-color: transparent; position: absolute; top: 0px; left: 0px; width: 100%; height: 100%"></canvas>
+        <!-- <canvas id="canvas3" style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 256; height: 256"></canvas> -->
+        <canvas id="canvas4" style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 100%; height: 100%"></canvas>
+        <!-- <canvas id="canvas5" style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 100%; height: 100%"></canvas> -->
+        <div id="compass" onclick="webapp.setAzimuth(0)">
+            <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+                <path d="m192.265625 8.027344c-89.882813 23.144531-161.09375 94.351562-184.238281 184.234375l29.0625 7.472656c20.40625-79.292969 83.355468-142.242187 162.644531-162.644531zm0 0" />
+                <path
+                    d="m474.910156 199.734375 29.0625-7.472656c-23.144531-89.882813-94.355468-161.089844-184.238281-184.234375l-7.46875 29.0625c79.292969 20.402344 142.238281 83.351562 162.644531 162.644531zm0 0"
+                />
+                <path d="m319.734375 503.957031c89.882813-23.132812 161.09375-94.324219 184.238281-184.222656l-29.0625-7.472656c-20.40625 79.308593-83.355468 142.242187-162.648437 162.632812zm0 0" />
+                <path
+                    d="m37.089844 312.261719-29.0625 7.472656c23.144531 89.898437 94.355468 161.09375 184.238281 184.222656l7.46875-29.0625c-79.292969-20.390625-142.238281-83.324219-162.644531-162.632812zm0 0"
+                />
+                <path d="m256 210.996094c-24.8125 0-45 20.1875-45 45 0 24.816406 20.1875 45 45 45s45-20.183594 45-45c0-24.8125-20.1875-45-45-45zm15 60h-30v-30h30zm0 0" />
+                <path
+                    d="m256 0-57.613281 198.386719-198.386719 57.609375 198.386719 57.601562 57.613281 198.402344 57.613281-198.402344 198.386719-57.601562-198.386719-57.609375zm0 330.996094c-41.351562 0-75-33.644532-75-75 0-41.351563 33.648438-75 75-75s75 33.648437 75 75c0 41.355468-33.648438 75-75 75zm0 0"
+                />
+                <path d="m369.097656 183.339844 40.449219-80.886719-80.890625 40.4375 9.140625 31.3125zm0 0" />
+                <path d="m337.796875 337.796875-9.136719 31.304687 80.886719 40.441407-40.449219-80.882813zm0 0" />
+                <path d="m142.902344 328.660156-40.449219 80.882813 80.886719-40.445313-9.136719-31.300781zm0 0" />
+                <path d="m174.203125 174.203125 9.140625-31.3125-80.890625-40.4375 40.449219 80.886719zm0 0" />
+            </svg>
+            <div id="compass_slice"></div>
+        </div>
+        <label id="compass_label"></label>
+        <section class="drawer" id="drawer-name" data-drawer-target>
+            <div class="drawer__overlay" data-drawer-close tabindex="-1"></div>
+            <div class="drawer__wrapper">
+                <div class="drawer__header">
+                    <div class="drawer__title">Options</div>
+                    <button class="drawer__close" data-drawer-close aria-label="Close Drawer"></button>
+                </div>
+                <div class="drawer__content">
+                    <button onclick="webapp.moveToEndPoint()">move</button>
+                    <button onclick="webapp.moveToStartPoint()">return</button>
+                    <form>
+                        <input type="checkbox" id="mapMap" name="mapMap" />
+                        <label for="mapMap"> map Map</label><br />
+                        <input type="checkbox" id="generateColor" name="generateColor" />
+                        <label for="generateColor"> Generate Colors</label><br />
+                        <input type="checkbox" id="debug" name="debug" />
+                        <label for="debug"> Debug Map</label><br />
+                        <input type="checkbox" id="computeNormals" name="computeNormals"/>
+                        <label for="computeNormals"> compute normals</label><br />
+                        <input type="checkbox" id="drawNormals" name="drawNormals" />
+                        <label for="drawNormals"> draw normals</label><br />
+                        <input type="checkbox" id="dayNightCycle" name="dayNightCycle" />
+                        <label for="dayNightCycle"> dayNight Cycle</label><br />
+                        <input type="checkbox" id="shadows" name="shadows" />
+                        <label for="shadows">Shadows</label><br />
+                        <input type="checkbox" id="debugGPUPicking" name="debugGPUPicking" />
+                        <label for="debugGPUPicking"> Debug GPU Picking</label><br />
+                        <input type="checkbox" id="readFeatures" name="readFeatures" />
+                        <label for="drawFeatures"> Enable read features</label><br />
+                        <input type="checkbox" id="debugFeaturePoints" name="debugFeaturePoints" />
+                        <label for="debugFeaturePoints"> Debug Draw Features</label><br />
+                        <input type="checkbox" id="dark" name="dark" />
+                        <label for="dark"> Dark Mode</label><br />
+                        <input type="checkbox" id="drawElevations" name="drawElevations" />
+                        <label for="drawElevations"> peaks elevation</label><br />
+                        <input type="checkbox" id="wireframe" />
+                        <label for="wireframe"> wireframe</label><br />
+                        <input type="checkbox" id="outline" />
+                        <label for="outline"> map outline</label><br />
+                        <input type="checkbox" id="stats" />
+                        <label for="stats"> show stats</label><br />
+                        <input id="exageration" type="range" min="0" max="4" step="0.01" />
+                        <label for="exageration" id="exagerationLabel"> exageration</label><br />
+                        <input id="depthMultiplier" type="range" min="0" max="200" step="1" />
+                        <label for="depthMultiplier" id="depthMultiplierLabel"> depthMultiplier</label><br />
+                        <input id="depthBiais" type="range" min="0" max="10" step="0.01" />
+                        <label for="depthBiais" id="depthBiaisLabel"> depthBiais</label><br />
+                        <input id="outlineStroke" type="range" min="0" max="10" step="0.01" />
+                        <label for="outlineStroke" id="outlineStrokeLabel"> outlineStroke</label><br />
+                        <input id="secondsInDay" type="range" min="0" max="86400" step="0.01" />
+                        <label for="secondsInDay" id="secondsInDayLabel"></label><br />
+                        <input id="far" type="range" min="0" max="400000" step="1" />
+                        <label for="far" id="farLabel"></label><br />
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <button id="camera_button" onclick="webapp.toggleCamera()" style="visibility: hidden">
+            <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
+                <path
+                    d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z"
+                />
+            </svg>
+        </button>
+        <button id="settings_button" data-drawer-trigger aria-controls="drawer-name">
+            <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
+                <path
+                    d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
+                />
+            </svg>
+        </button>
+
+        <button id="map_button" onclick="webapp.toggleSetting('mapMap')">
+            <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
+                <path
+                    d="M15,19L9,16.89V5L15,7.11M20.5,3C20.44,3 20.39,3 20.34,3L15,5.1L9,3L3.36,4.9C3.15,4.97 3,5.15 3,5.38V20.5A0.5,0.5 0 0,0 3.5,21C3.55,21 3.61,21 3.66,20.97L9,18.9L15,21L20.64,19.1C20.85,19 21,18.85 21,18.62V3.5A0.5,0.5 0 0,0 20.5,3Z"
+                />
+            </svg>
+        </button>
+        <div id="selectedPeakHolder">
+            <div id="selectedPeak">
+                <label id="selectedPeakLabel" onclick="webapp.focusSelectedItem()"></label>
+                <button id="gotopeak_button" onclick="webapp.goToSelectedItem()">
+                    <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
+                        <path
+                            fill="#ffffff"
+                            d="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M3.05,13H1V11H3.05C3.5,6.83 6.83,3.5 11,3.05V1H13V3.05C17.17,3.5 20.5,6.83 20.95,11H23V13H20.95C20.5,17.17 17.17,20.5 13,20.95V23H11V20.95C6.83,20.5 3.5,17.17 3.05,13M12,5A7,7 0 0,0 5,12A7,7 0 0,0 12,19A7,7 0 0,0 19,12A7,7 0 0,0 12,5Z"
+                        />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <label id="elevationLabel"></label>
+        <input id="elevation" type="range" min="0" max="9000" />
+
+        <script>
+            /*!
+             * Based on articles on
+             * https://gomakethings.com
+             */
+
+            var drawer = function () {
+                /**
+                 * Element.closest() polyfill
+                 * https://developer.mozilla.org/en-US/docs/Web/API/Element/closest#Polyfill
+                 */
+                if (!Element.prototype.closest) {
+                    if (!Element.prototype.matches) {
+                        Element.prototype.matches = Element.prototype.msMatchesSelector || Element.prototype.webkitMatchesSelector;
+                    }
+                    Element.prototype.closest = function (s) {
+                        var el = this;
+                        var ancestor = this;
+                        if (!document.documentElement.contains(el)) return null;
+                        do {
+                            if (ancestor.matches(s)) return ancestor;
+                            ancestor = ancestor.parentElement;
+                        } while (ancestor !== null);
+                        return null;
+                    };
+                }
+
+                //
+                // Settings
+                //
+                var settings = {
+                    speedOpen: 50,
+                    speedClose: 350,
+                    activeClass: 'is-active',
+                    visibleClass: 'is-visible',
+                    selectorTarget: '[data-drawer-target]',
+                    selectorTrigger: '[data-drawer-trigger]',
+                    selectorClose: '[data-drawer-close]'
+                };
+
+                //
+                // Methods
+                //
+
+                // Toggle accessibility
+                var toggleAccessibility = function (event) {
+                    if (event.getAttribute('aria-expanded') === 'true') {
+                        event.setAttribute('aria-expanded', false);
+                    } else {
+                        event.setAttribute('aria-expanded', true);
+                    }
+                };
+
+                // Open Drawer
+                var openDrawer = function (trigger) {
+                    // Find target
+                    var target = document.getElementById(trigger.getAttribute('aria-controls'));
+
+                    // Make it active
+                    target.classList.add(settings.activeClass);
+
+                    // Make body overflow hidden so it's not scrollable
+                    document.documentElement.style.overflow = 'hidden';
+
+                    // Toggle accessibility
+                    toggleAccessibility(trigger);
+
+                    // Make it visible
+                    setTimeout(function () {
+                        target.classList.add(settings.visibleClass);
+                    }, settings.speedOpen);
+                };
+
+                // Close Drawer
+                var closeDrawer = function (event) {
+                    // Find target
+                    var closestParent = event.closest(settings.selectorTarget),
+                        childrenTrigger = document.querySelector('[aria-controls="' + closestParent.id + '"');
+
+                    // Make it not visible
+                    closestParent.classList.remove(settings.visibleClass);
+
+                    // Remove body overflow hidden
+                    document.documentElement.style.overflow = '';
+
+                    // Toggle accessibility
+                    toggleAccessibility(childrenTrigger);
+
+                    // Make it not active
+                    setTimeout(function () {
+                        closestParent.classList.remove(settings.activeClass);
+                    }, settings.speedClose);
+                };
+
+                // Click Handler
+                var clickHandler = function (event) {
+                    // Find elements
+                    var toggle = event.target,
+                        open = toggle.closest(settings.selectorTrigger),
+                        close = toggle.closest(settings.selectorClose);
+
+                    // Open drawer when the open button is clicked
+                    if (open) {
+                        openDrawer(open);
+                    }
+
+                    // Close drawer when the close button (or overlay area) is clicked
+                    if (close) {
+                        closeDrawer(close);
+                    }
+
+                    // Prevent default link behavior
+                    if (open || close) {
+                        event.preventDefault();
+                    }
+                };
+
+                // Keydown Handler, handle Escape button
+                var keydownHandler = function (event) {
+                    if (event.key === 'Escape' || event.keyCode === 27) {
+                        // Find all possible drawers
+                        var drawers = document.querySelectorAll(settings.selectorTarget),
+                            i;
+
+                        // Find active drawers and close them when escape is clicked
+                        for (i = 0; i < drawers.length; ++i) {
+                            if (drawers[i].classList.contains(settings.activeClass)) {
+                                closeDrawer(drawers[i]);
+                            }
+                        }
+                    }
+                };
+
+                //
+                // Inits & Event Listeners
+                //
+                document.addEventListener('click', clickHandler, false);
+                document.addEventListener('keydown', keydownHandler, false);
+            };
+
+            drawer();
+        </script>
+          
+          <!-- <script type="text/javascript" src="../webapp/app.js"></script> -->
+    </body>
+</html>
