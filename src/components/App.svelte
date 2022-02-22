@@ -4,14 +4,15 @@
   import { Command } from '@tauri-apps/api/shell';
   import { listen } from '@tauri-apps/api/event';
   import { format } from '@fragaria/address-formatter';
-  import Autocomplete from './components/Autocomplete.svelte';
-  import Drawer, { AppContent, Content, Header, Title, Subtitle, Scrim } from '@smui/drawer';
-  import { Text } from '@smui/list';
-  import Slider from '@smui/slider';
+  import Autocomplete from './Autocomplete.svelte';
+  import Drawer, { AppContent, Content, Scrim } from '@smui/drawer';
+  import { Group, Text } from '@smui/list';
+  import { Label } from '@smui/common';
   import CircularProgress from '@smui/circular-progress';
   import 'svelte-material-ui/bare.css';
-  import { Map } from 'maplibre-gl';
+  import IconButton from '@smui/icon-button';
   import 'maplibre-gl/dist/maplibre-gl.css';
+  import { Map, Marker, NavigationControl } from 'maplibre-gl';
   let webapp;
 
   let drawerOpened = false;
@@ -19,7 +20,6 @@
   let selectedAddress;
   let selectedAddressLabel;
   $: {
-    console.log('selectedAddress', selectedAddress);
     if (selectedAddress) {
       selectedAddressLabel = getAddressLabel(selectedAddress);
       const geometry = selectedAddress.geometry;
@@ -45,7 +45,6 @@
     // return obj.name;
   }
   async function queryAddress(query: string) {
-    console.log('queryAddress', query);
     if (!query || query === selectedAddressLabel) {
       return null;
     }
@@ -85,47 +84,53 @@
   }
   let map: Map;
   let mapContainer;
+  let mapPositionMarker: Marker;
   function easing(t) {
     return t * (2 - t);
   }
   onMount(async () => {
     try {
-      webapp = await import('./geo-three/webapp/app');
+      webapp = await import('../geo-three/webapp/app');
       webapp.setUpdateExternalPositionListener(sendPositionToEmulators);
       webapp.setOnSettingsChangedListener(onSettingsChanged);
       webapp.setUpdateExternalPositionThrottleTime(1000);
       webapp.setKeyboardMoveSpeed(0.3);
       webapp.callMethods(settings);
-
-      // map = new Map({
-      //   container: mapContainer,
-      //   style: {
-      //     version: 8,
-      //     sources: {
-      //       'raster-tiles': {
-      //         type: 'raster',
-      //         tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      //         tileSize: 256,
-      //         attribution:
-      //           '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      //       },
-      //     },
-      //     layers: [
-      //       {
-      //         id: 'simple-tiles',
-      //         type: 'raster',
-      //         source: 'raster-tiles',
-      //         minzoom: 0,
-      //         maxNativeZoom: 18,
-      //       },
-      //     ],
-      //   },
-      //   center: [settings.setPosition.lon, settings.setPosition.lat],
-      //   zoom: 20,
-      //   maxPitch: 80,
-      //   pitch: 80,
-      //   interactive: true,
-      // });
+      const position = settings.setPosition;
+      map = new Map({
+        container: mapContainer,
+        style: {
+          version: 8,
+          sources: {
+            'raster-tiles': {
+              type: 'raster',
+              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              tileSize: 256,
+              minzoom: 0,
+              maxzoom: 18,
+              attribution:
+                '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            },
+          },
+          layers: [
+            {
+              id: 'simple-tiles',
+              type: 'raster',
+              source: 'raster-tiles',
+            },
+          ],
+        },
+        center: position,
+        zoom: 14,
+        interactive: false,
+      });
+      map.addControl(
+        new NavigationControl({
+          showCompass: false,
+          showZoom: true,
+        })
+      );
+      mapPositionMarker = new Marker().setLngLat(position).addTo(map);
       // // pixels the map pans when the up or down arrow is clicked
       // var deltaDistance = 2;
       // const KEYCODE = {
@@ -213,10 +218,9 @@
 
   async function spawn(cmd, args, cwd?) {
     const command = new Command(cmd, args, { cwd: cwd });
-    console.log('spawn', cmd, args.join(' '), cwd);
-    command.on('close', (data) => {
-      console.log(`command finished with code ${data.code} and signal ${data.signal}`);
-    });
+    // command.on('close', (data) => {
+    //   console.log(`command finished with code ${data.code} and signal ${data.signal}`);
+    // });
     command.on('error', (error) => console.error(`command error: "${error}"`));
     // command.stdout.on('data', (line) => onMessage(`command stdout: "${line}"`));
     // command.stderr.on('data', (line) => onMessage(`command stderr: "${line}"`));
@@ -225,18 +229,15 @@
   }
 
   async function installApk() {
-    console.log('installApk');
     let result = false;
     try {
       result = await invoke('install_apk');
     } catch (error) {
       console.error(error);
     }
-    console.log('installApk done', result);
     return result;
   }
   async function setupAdb() {
-    console.log('setupAdb');
     const commands = [
       'adb shell pm grant io.appium.settings android.permission.READ_PHONE_STATE',
       'adb shell pm grant io.appium.settings android.permission.WRITE_SETTINGS',
@@ -251,11 +252,12 @@
     ];
     for (let index = 0; index < commands.length; index++) {
       const array = commands[index].split(' ');
-      console.log('setupAdb', array);
       await spawn(array[0], array.slice(1));
     }
   }
   async function sendPositionToEmulators(position) {
+    mapPositionMarker.setLngLat(position);
+    map.setCenter(position);
     const args = [
       'shell',
       'am',
@@ -269,7 +271,6 @@
       'io.appium.settings/.LocationService',
     ];
     try {
-      console.log('sendPositionToEmulators', args);
       await spawn('adb', args);
     } catch (error) {
       console.error(error);
@@ -347,25 +348,55 @@
       id="canvas4"
       style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 100%; height: 100%"
     />
-    <div class="map" id="map" bind:this={mapContainer} />
-    <Autocomplete
-      textfield$variant="filled"
-      search={queryAddress}
-      clearOnBlur={true}
-      getOptionLabel={getAddressLabel}
-      bind:value={selectedAddress}
-      showMenuWithNoInput={false}
-      label="Enter address here..."
-    >
-      <Text
-        slot="loading"
-        style="display: flex; width: 100%; justify-content: center; align-items: center;"
-      >
-        <CircularProgress style="height: 24px; width: 24px;" indeterminate />
-      </Text>
-    </Autocomplete>
+    <div style="position:absolute; width:100%;height:100%;display:flex;pointer-events: none; ">
+      <div
+        class="map"
+        id="map"
+        bind:this={mapContainer}
+        style="align-self:flex-end;margin: 20px;"
+      />
+    </div>
 
-    <label id="elevationLabel" for="elevation" />
+    <div
+      style="pointer-events: none;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    z-index: 100;
+    justify-content: center;"
+    >
+      <Autocomplete
+        textfield$variant="filled"
+        search={queryAddress}
+        clearOnBlur={true}
+        class="autocomplete"
+        getOptionLabel={getAddressLabel}
+        bind:value={selectedAddress}
+        showMenuWithNoInput={false}
+        label="Enter address here..."
+      >
+        <Text
+          slot="loading"
+          style="display: flex; width: 100%; justify-content: center; align-items: center;"
+        >
+          <CircularProgress style="height: 24px; width: 24px;" indeterminate />
+        </Text>
+      </Autocomplete>
+    </div>
+    <IconButton class="material-icons" on:click={() => (drawerOpened = !drawerOpened)}
+      >menu</IconButton
+    >
+    <Group style="display: flex; bottom: 10px;
+    right: 10px;
+    position: absolute; justify-content: center; align-items: center;">
+      <Text
+        id="elevationLabel"
+        
+      />
+      <Text>&#160;m</Text>
+    </Group>
+
     <input id="elevation" type="range" min="0" max="9000" />
     <div id="compass" on:click={() => webapp?.setAzimuth(0)}>
       <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
@@ -403,29 +434,6 @@
       <div id="compass_slice" />
     </div>
     <label id="compass_label" />
-
-    <button id="camera_button" on:click={() => webapp?.toggleCamera()} style="visibility: hidden">
-      <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
-        <path
-          d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z"
-        />
-      </svg>
-    </button>
-    <button id="settings_button" on:click={() => (drawerOpened = !drawerOpened)}>
-      <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
-        <path
-          d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
-        />
-      </svg>
-    </button>
-
-    <button id="map_button" on:click={() => webapp?.toggleSetting('mapMap')}>
-      <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
-        <path
-          d="M15,19L9,16.89V5L15,7.11M20.5,3C20.44,3 20.39,3 20.34,3L15,5.1L9,3L3.36,4.9C3.15,4.97 3,5.15 3,5.38V20.5A0.5,0.5 0 0,0 3.5,21C3.55,21 3.61,21 3.66,20.97L9,18.9L15,21L20.64,19.1C20.85,19 21,18.85 21,18.62V3.5A0.5,0.5 0 0,0 20.5,3Z"
-        />
-      </svg>
-    </button>
     <div id="selectedPeakHolder">
       <div id="selectedPeak">
         <label id="selectedPeakLabel" on:click={() => webapp?.focusSelectedItem()} />

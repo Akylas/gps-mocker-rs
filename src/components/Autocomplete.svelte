@@ -24,6 +24,7 @@
       <Textfield
         {label}
         {disabled}
+        style='min-width:100% !important;'
         bind:value={text}
         {...prefixFilter($$restProps, 'textfield$')}
       />
@@ -195,7 +196,6 @@
       error = false;
       try {
         const searchResult = await search(text);
-        console.log('searchResult', searchResult);
         if (searchResult !== false) {
           matches = searchResult;
           if (selectOnExactMatch) {
@@ -277,13 +277,14 @@
 
   function selectOption(option: any, setText = true) {
     if (setText) {
-      text = getOptionLabel(option);
+      previousText = text = getOptionLabel(option);
     }
     value = option;
     if (!setText) {
       previousValue = option;
     }
     dispatch(element, 'SMUIAutocomplete:selected', option);
+    blur();
   }
 
   function deselectOption(option: any, setText = true) {
