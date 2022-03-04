@@ -4,7 +4,9 @@
 )]
 
 use std::process::Command;
-use tauri::api::shell;
+// use tauri::api::shell::{
+//   open
+// };
 use tauri::{CustomMenuItem, Menu, MenuEntry, MenuItem, Submenu, WindowBuilder, WindowUrl};
 // use cocoa::foundation::{NSUserDefaults};
 
@@ -80,7 +82,6 @@ fn main() {
       let win = win
         .title("GPS Mocker")
         .resizable(true)
-        .transparent(false)
         .decorations(true)
         .always_on_top(false)
         .inner_size(800.0, 550.0)
@@ -109,20 +110,20 @@ fn main() {
         "File",
         Menu::with_items([MenuItem::CloseWindow.into()]),
       )),
-      MenuEntry::Submenu(Submenu::new(
-        "Edit",
-        Menu::with_items([
-          MenuItem::Undo.into(),
-          MenuItem::Redo.into(),
-          MenuItem::Separator.into(),
-          MenuItem::Cut.into(),
-          MenuItem::Copy.into(),
-          MenuItem::Paste.into(),
-          #[cfg(not(target_os = "macos"))]
-          MenuItem::Separator.into(),
-          MenuItem::SelectAll.into(),
-        ]),
-      )),
+      // MenuEntry::Submenu(Submenu::new(
+      //   "Edit",
+      //   Menu::with_items([
+      //     MenuItem::Undo.into(),
+      //     MenuItem::Redo.into(),
+      //     MenuItem::Separator.into(),
+      //     MenuItem::Cut.into(),
+      //     MenuItem::Copy.into(),
+      //     MenuItem::Paste.into(),
+      //     #[cfg(not(target_os = "macos"))]
+      //     MenuItem::Separator.into(),
+      //     MenuItem::SelectAll.into(),
+      //   ]),
+      // )),
       MenuEntry::Submenu(Submenu::new(
         "View",
         Menu::with_items([MenuItem::EnterFullScreen.into()]),
@@ -141,22 +142,22 @@ fn main() {
       // show a menu search field
       MenuEntry::Submenu(Submenu::new(
         "Help",
-        Menu::with_items([CustomMenuItem::new("Learn More", "Learn More").into()]),
+        Menu::with_items([CustomMenuItem::new("learn_more", "Learn More").into()]),
       )),
     ]))
     .on_menu_event(|event| {
-      let event_name = event.menu_item_id();
-      println!("on_menu_event {:?}", event_name);
-      match event_name {
-        "Learn More" => {
-          shell::open(
-            "https://github.com/probablykasper/tauri-template".to_string(),
-            None,
-          )
-          .unwrap();
-        }
-        _ => {}
-      }
+      // let event_name = event.menu_item_id();
+      // println!("on_menu_event {:?}", event_name);
+      // match event_name {
+      //   "Learn More" => {
+      //     shell::open(
+      //       "https://github.com/probablykasper/tauri-template".to_string(),
+      //       None,
+      //     )
+      //     .unwrap();
+      //   }
+      //   _ => {}
+      // }
     })
     .run(ctx)
     .expect("error while running tauri application");

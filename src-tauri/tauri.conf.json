@@ -4,7 +4,7 @@
   },
   "build": {
     "distDir": "../build",
-    "devPath": "http://localhost:3000",
+    "devPath": "http://localhost:3011",
     "beforeDevCommand": "npm run dev:web",
     "beforeBuildCommand": "npm run build:web"
   },
@@ -23,7 +23,9 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "resources": ["../resources/settings_apk-debug.apk"],
+      "resources": [
+        "../resources/settings_apk-debug.apk"
+      ],
       "externalBin": [],
       "copyright": "© 2021 Akylas",
       "category": "DeveloperTool",
@@ -52,8 +54,21 @@
     },
     "allowlist": {
       "all": false,
-      "shell":{
-        "execute":true
+      "shell": {
+        "execute": true,
+        "open": true,
+        "scope": [
+          {
+            "name": "xcrun",
+            "cmd": "xcrun",
+            "args": true
+          },
+          {
+            "name": "adb",
+            "cmd": "adb",
+            "args": true
+          }
+        ]
       }
     },
     "security": {
