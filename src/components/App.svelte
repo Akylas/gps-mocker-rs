@@ -1,24 +1,31 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api';
-  import { Command } from '@tauri-apps/api/shell';
-  import { listen } from '@tauri-apps/api/event';
-  import { format } from '@fragaria/address-formatter';
-  import Autocomplete from './Autocomplete.svelte';
-  import Drawer, { AppContent, Content, Scrim } from '@smui/drawer';
-  import { Group, Text } from '@smui/list';
-  import { Label } from '@smui/common';
+  import format from '@fragaria/address-formatter';
   import CircularProgress from '@smui/circular-progress';
-  import 'svelte-material-ui/bare.css';
+  import { H6 } from '@smui/common/elements';
+  import Drawer, { AppContent, Content, Scrim } from '@smui/drawer';
   import IconButton from '@smui/icon-button';
-  import 'maplibre-gl/dist/maplibre-gl.css';
+  import { Group, Subheader, Text } from '@smui/list';
+  import { invoke } from '@tauri-apps/api';
+  import { listen } from '@tauri-apps/api/event';
+  import { Command } from '@tauri-apps/api/shell';
+  import { diff } from 'deep-object-diff';
   import { Map, Marker, NavigationControl } from 'maplibre-gl';
+  import 'maplibre-gl/dist/maplibre-gl.css';
+  import { onMount } from 'svelte';
+  import 'svelte-material-ui/bare.css';
+  import { writable } from 'svelte/store';
+  import Autocomplete from './Autocomplete.svelte';
+  import CheckComponent from './CheckComponent.svelte';
+  import SliderComponent from './SliderComponent.svelte';
+  import MapboxGLButtonControl from './MapboxGLButtonControl';
   let webapp;
 
   let drawerOpened = false;
+  let fullMap = false;
 
   let selectedAddress;
   let selectedAddressLabel;
+
   $: {
     if (selectedAddress) {
       selectedAddressLabel = getAddressLabel(selectedAddress);
@@ -40,7 +47,7 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { type, osm_id, osm_value, osm_key, osm_type, extent, ...toFormat } = obj.properties;
     return (
-      format(toFormat, { output: 'array', fallbackCountryCode: 'FR' } as any) as string[]
+      format.format(toFormat, { output: 'array', fallbackCountryCode: 'FR' } as any) as string[]
     ).join(' ');
     // return obj.name;
   }
@@ -61,42 +68,72 @@
       .catch((e) => console.error(e));
   }
 
-  let settings = localStorage.getItem('settings')
-    ? JSON.parse(localStorage.getItem('settings'))
-    : {
-        far: 50000,
-        near: 1,
-        outline: false,
-        mapMap: true,
-        readFeatures: false,
-        maxZoomForPeaks: 0,
-        exageration: 0.2,
-        setAzimuth: 0,
-        flipRasterImages: false,
-        stickToGround: false,
-        rasterProviderZoomDelta: 0,
-        setPosition: { lat: 45.19776, lon: 5.73178, altitude: 270 },
-      };
-
+  // let settings = {
+  //   ...defaultSettings,
+  //   setPosition: { lat: 45.19776, lon: 5.73178, altitude: 270 },
+  // };
+  localStorage.clear();
+  const now = new Date();
+  let settings = {
+    ...(localStorage.getItem('settings')
+      ? JSON.parse(localStorage.getItem('settings'))
+      : {
+          far: 50000,
+          near: 1,
+          dark: false,
+          shadows: false,
+          outline: false,
+          mapMap: true,
+          debug: false,
+          secondsInDay: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
+          dayNightCycle: false,
+          readFeatures: false,
+          generateColor: false,
+          maxZoomForPeaks: 0,
+          exageration: 1.3,
+          outlineStroke: 1,
+          depthBiais: 0.23,
+          depthMultiplier: 11,
+          setAzimuth: 0,
+          stickToGround: false,
+        }),
+    rasterProviderZoomDelta: 0,
+    setPosition: { lat: 45.19776, lon: 5.73178, altitude: 270 },
+    flipRasterImages: false,
+  };
+  const store = writable(JSON.parse(JSON.stringify(settings)));
+  store.subscribe((v) => {
+    const res = diff(settings, v);
+    webapp && webapp.callMethods(res);
+  });
   function onSettingsChanged(key, value) {
     settings[key] = value;
+    if ($store[key] !== value) {
+      $store[key] = value;
+    }
     localStorage.setItem('settings', JSON.stringify(settings));
   }
   let map: Map;
   let mapContainer;
   let mapPositionMarker: Marker;
-  function easing(t) {
-    return t * (2 - t);
+
+  function setFullMap(value) {
+    fullMap = value;
+    setTimeout(() => {
+      map.resize();
+    }, 10);
   }
+
   onMount(async () => {
     try {
       webapp = await import('../geo-three/webapp/app');
+      webapp.callMethods(settings);
+
       webapp.setUpdateExternalPositionListener(sendPositionToEmulators);
       webapp.setOnSettingsChangedListener(onSettingsChanged);
       webapp.setUpdateExternalPositionThrottleTime(1000);
       webapp.setKeyboardMoveSpeed(0.3);
-      webapp.callMethods(settings);
-      const position = settings.setPosition;
+      const position = settings['setPosition'];
       map = new Map({
         container: mapContainer,
         style: {
@@ -122,14 +159,31 @@
         },
         center: position,
         zoom: 14,
-        interactive: false,
       });
+
+      const myCustomControl = new MapboxGLButtonControl({
+        className: 'mapboxgl-ctrl-close',
+        title: 'Fullscreen mode',
+        eventHandler: (event) => {
+          event.stopPropagation();
+          setFullMap(!fullMap);
+        },
+      });
+
+      map.addControl(myCustomControl);
       map.addControl(
         new NavigationControl({
           showCompass: false,
           showZoom: true,
         })
       );
+      map.on('click', function (e) {
+        // The event object (e) contains information like the
+        // coordinates of the point on the map that was clicked.
+        if (fullMap) {
+          webapp && webapp.setPosition({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+        }
+      });
       mapPositionMarker = new Marker().setLngLat(position).addTo(map);
       // // pixels the map pans when the up or down arrow is clicked
       // var deltaDistance = 2;
@@ -227,6 +281,18 @@
 
     return command.spawn();
   }
+  async function exec(cmd, args, cwd?) {
+    return new Promise<string>((resolve, reject) => {
+      const command = new Command(cmd, args, { cwd: cwd });
+      let result = '';
+      command.on('error', reject);
+      command.stdout.on('data', (line) => (result += line));
+      command.on('close', () => {
+        resolve(result);
+      });
+      return command.spawn();
+    });
+  }
 
   async function installApk() {
     let result = false;
@@ -256,8 +322,21 @@
     }
   }
   async function sendPositionToEmulators(position) {
-    mapPositionMarker.setLngLat(position);
-    map.setCenter(position);
+    sendPositionToIOSSimulators(position);
+    sendPositionToAndroidEmulators(position);
+  }
+  async function sendPositionToIOSSimulators(position) {
+    let result = await exec('xcrun', ['simctl', 'list', '-j', 'devices']);
+    const data = JSON.parse(result);
+    const devices = Object.values<any[]>(data.devices)
+      .flat()
+      .filter((d) => d.state === 'Booted')
+      .map((v) => v.udid);
+    return invoke('send_location_to_simulators', { ...position, devices });
+  }
+  async function sendPositionToAndroidEmulators(position) {
+    mapPositionMarker && mapPositionMarker.setLngLat(position);
+    map && map.setCenter(position);
     const args = [
       'shell',
       'am',
@@ -291,48 +370,62 @@
 <div class="drawer-container">
   <Drawer class="drawer" variant="modal" bind:open={drawerOpened}>
     <Content class="drawer-content">
-      <input type="checkbox" id="mapMap" name="mapMap" />
-      <label for="mapMap"> map Map</label><br />
-      <input type="checkbox" id="generateColor" name="generateColor" />
-      <label for="generateColor"> Generate Colors</label><br />
-      <input type="checkbox" id="debug" name="debug" />
-      <label for="debug"> Debug Map</label><br />
-      <input type="checkbox" id="computeNormals" name="computeNormals" />
-      <label for="computeNormals"> compute normals</label><br />
-      <input type="checkbox" id="drawNormals" name="drawNormals" />
-      <label for="drawNormals"> draw normals</label><br />
-      <input type="checkbox" id="dayNightCycle" name="dayNightCycle" />
-      <label for="dayNightCycle"> dayNight Cycle</label><br />
-      <input type="checkbox" id="shadows" name="shadows" />
-      <label for="shadows">Shadows</label><br />
-      <input type="checkbox" id="debugGPUPicking" name="debugGPUPicking" />
-      <label for="debugGPUPicking"> Debug GPU Picking</label><br />
-      <input type="checkbox" id="readFeatures" name="readFeatures" />
-      <label for="drawFeatures"> Enable read features</label><br />
-      <input type="checkbox" id="debugFeaturePoints" name="debugFeaturePoints" />
-      <label for="debugFeaturePoints"> Debug Draw Features</label><br />
-      <input type="checkbox" id="dark" name="dark" />
-      <label for="dark"> Dark Mode</label><br />
-      <input type="checkbox" id="drawElevations" name="drawElevations" />
-      <label for="drawElevations"> peaks elevation</label><br />
-      <input type="checkbox" id="wireframe" />
-      <label for="wireframe"> wireframe</label><br />
-      <input type="checkbox" id="outline" />
-      <label for="outline"> map outline</label><br />
-      <input type="checkbox" id="stats" />
-      <label for="stats"> show stats</label><br />
-      <input id="exageration" type="range" min="0" max="4" step="0.01" />
-      <label for="exageration" id="exagerationLabel"> exageration</label><br />
-      <input id="depthMultiplier" type="range" min="0" max="200" step="1" />
-      <label for="depthMultiplier" id="depthMultiplierLabel"> depthMultiplier</label><br />
-      <input id="depthBiais" type="range" min="0" max="10" step="0.01" />
-      <label for="depthBiais" id="depthBiaisLabel"> depthBiais</label><br />
-      <input id="outlineStroke" type="range" min="0" max="10" step="0.01" />
-      <label for="outlineStroke" id="outlineStrokeLabel"> outlineStroke</label><br />
-      <input id="secondsInDay" type="range" min="0" max="86400" step="0.01" />
-      <label for="secondsInDay" id="secondsInDayLabel" /><br />
-      <input id="far" type="range" min="0" max="400000" step="1" />
-      <label for="far" id="farLabel" /><br />
+      <Subheader component={H6}>Settings</Subheader>
+      <CheckComponent title="mapMap" bind:checked={$store.mapMap} />
+      <CheckComponent title="DayNight Cycle" bind:checked={$store.dayNightCycle} />
+      <CheckComponent title="Shadows" bind:checked={$store.shadows} />
+      <CheckComponent title="Dark Mode" bind:checked={$store.dark} />
+      <CheckComponent title="Map Outline" bind:checked={$store.outline} />
+
+      <SliderComponent
+        title="Viewing Distance"
+        min="0"
+        max="400000"
+        step="1"
+        bind:value={$store.far}
+        labelId="farLabel"
+      />
+      <SliderComponent
+        title="Exageration"
+        bind:value={$store.exageration}
+        min="0"
+        max="4"
+        step="0.01"
+        labelId="exagerationLabel"
+      />
+      <SliderComponent
+        title="Depth Multiplier"
+        min="0"
+        max="200"
+        step="1"
+        bind:value={$store.depthMultiplier}
+        labelId="depthMultiplierLabel"
+      />
+
+      <SliderComponent
+        title="Depth Biais"
+        min="0"
+        max="10"
+        step="0.01"
+        bind:value={$store.depthBiais}
+        labelId="depthBiaisLabel"
+      />
+      <SliderComponent
+        title="Outline Stroke Width"
+        min="0"
+        max="10"
+        step="0.01"
+        bind:value={$store.outlineStroke}
+        labelId="outlineStrokeLabel"
+      />
+      <SliderComponent
+        title="Time of Day"
+        min="0"
+        max="86400"
+        step="1"
+        bind:value={$store.secondsInDay}
+        labelId="secondsInDayLabel"
+      />
     </Content>
   </Drawer>
   <Scrim fixed={false} />
@@ -348,11 +441,21 @@
       id="canvas4"
       style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 100%; height: 100%"
     />
-    <div style="position:absolute; width:100%;height:100%;display:flex;pointer-events: none; ">
+    <div
+      style="position:absolute; width:100%;height:100%;display:flex; pointer-events:none;"
+      on:click={() => {
+        if (!fullMap) {
+          setFullMap(true);
+        }
+      }}
+    >
       <div
+        style:pointer-events="auto"
         class="map"
         id="map"
         bind:this={mapContainer}
+        style:width={fullMap ? '100%' : '20%'}
+        style:height={fullMap ? '100%' : '20%'}
         style="align-self:flex-end;margin: 20px;"
       />
     </div>
@@ -387,13 +490,12 @@
     <IconButton class="material-icons" on:click={() => (drawerOpened = !drawerOpened)}
       >menu</IconButton
     >
-    <Group style="display: flex; bottom: 10px;
+    <Group
+      style="display: flex; bottom: 10px;
     right: 10px;
-    position: absolute; justify-content: center; align-items: center;">
-      <Text
-        id="elevationLabel"
-        
-      />
+    position: absolute; justify-content: center; align-items: center;"
+    >
+      <Text id="elevationLabel" />
       <Text>&#160;m</Text>
     </Group>
 

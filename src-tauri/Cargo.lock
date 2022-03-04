@@ -1022,6 +1022,8 @@ dependencies = [
 name = "gps_mocker"
 version = "0.1.0"
 dependencies = [
+ "cocoa",
+ "objc",
  "serde",
  "serde_json",
  "tauri",
