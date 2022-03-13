@@ -5,7 +5,7 @@ const ignoreWarnings = new Set(['a11y-no-onchange', 'a11y-label-has-associated-c
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const config = require('./package.json');
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
     root: './src',
     base: './', // use relative paths
     publicDir: '../public',
@@ -14,11 +14,19 @@ export default defineConfig({
         port: 3011,
         strictPort: true
     },
+    resolve: {
+        alias:
+            mode !== 'production'
+                ? {
+                      './carbon.scss': 'carbon-components-svelte/css/g90.css'
+                  }
+                : {}
+    },
     build: {
         outDir: '../build',
         emptyOutDir: true,
-        minify: false,
-        sourcemap: true,
+        minify: mode === 'production',
+        sourcemap: mode !== 'production',
         target: 'modules'
     },
     plugins: [
@@ -36,6 +44,7 @@ export default defineConfig({
     define: {
         REPO_URL: `"${config.homepage}"`,
         FORCE_MOBILE: false,
-        EXTERNAL_APP: false
+        EXTERNAL_APP: false,
+        PRODUCTION: mode === 'production'
     }
-});
+}));

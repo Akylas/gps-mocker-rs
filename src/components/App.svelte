@@ -1,81 +1,68 @@
 <script lang="ts">
     import format from '@fragaria/address-formatter';
-    import CircularProgress from '@smui/circular-progress';
-    import { H6 } from '@smui/common/elements';
-    import Drawer, { AppContent, Content, Scrim } from '@smui/drawer';
-    import IconButton from '@smui/icon-button';
-    import { Group, Subheader, Text } from '@smui/list';
     import { invoke } from '@tauri-apps/api';
     import { listen } from '@tauri-apps/api/event';
     import { Command, open } from '@tauri-apps/api/shell';
+    import { Checkbox, Content, Header, HeaderAction, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput, HeaderPanelDivider } from 'carbon-components-svelte';
     import { diff } from 'deep-object-diff';
     import { Map, Marker, NavigationControl } from 'maplibre-gl';
     import 'maplibre-gl/dist/maplibre-gl.css';
     import { onMount } from 'svelte';
-    import 'svelte-material-ui/bare.css';
     import { writable } from 'svelte/store';
-    import Autocomplete from './Autocomplete.svelte';
-    import CheckComponent from './CheckComponent.svelte';
-    import SliderComponent from './SliderComponent.svelte';
+    import { settings as defaultSettings } from '../geo-three/webapp/settings';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
     let webapp;
 
     let drawerOpened = false;
     let fullMap = false;
 
-    let selectedAddress;
-    let selectedAddressLabel;
-
-    $: {
-        if (selectedAddress) {
-            selectedAddressLabel = getAddressLabel(selectedAddress);
-            const geometry = selectedAddress.geometry;
-            if (geometry.type === 'Point') {
-                webapp?.setPosition({
-                    lat: geometry.coordinates[1],
-                    lon: geometry.coordinates[0]
-                });
-            }
-        }
-        selectedAddressLabel = null;
+    // Returns a function, that, as long as it continues to be invoked, will not
+    // be triggered. The function will be called after it stops being called for
+    // N milliseconds. If `immediate` is passed, trigger the function on the
+    // leading edge, instead of the trailing.
+    function debounce(func, wait, immediate = false) {
+        var timeout;
+        return function (...args) {
+            var later = function () {
+                timeout = null;
+                if (!immediate) func(...args);
+            };
+            var callNow = immediate && !timeout;
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+            if (callNow) func(...args);
+        };
     }
 
     function getAddressLabel(obj) {
         if (!obj) {
             return '';
         }
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { type, osm_id, osm_value, osm_key, osm_type, extent, ...toFormat } = obj.properties;
-        return (format.format(toFormat, { output: 'array', fallbackCountryCode: 'FR' } as any) as string[]).join(' ');
-        // return obj.name;
+        toFormat.country_code=toFormat.countrycode;
+        delete toFormat.countrycode;
+        const res= (format.format(toFormat, { output: 'string', fallbackCountryCode: 'FR' } as any) as string).split('\n');
+        return  {
+            text:res[0],
+            description:res.slice(1).join(' ')
+        }
     }
     async function queryAddress(query: string) {
-        if (!query || query === selectedAddressLabel) {
+        if (!query || query.length === 0) {
             return null;
         }
         return fetch(`https://photon.komoot.io/api?q=${query}`)
             .then((data) => data.json())
-            .then((data) => {
-                return data.features.filter((r) => r.properties.osm_type !== 'R');
-                // .map((d) => {
-                //   const { properties } = d;
-                //   // const name = formatAddress(properties);
-                //   return { name, value: d };
-                // });
-            })
+            .then((data) => data.features.filter((r) => r.properties.osm_type !== 'R'))
             .catch((e) => console.error(e));
     }
 
-    // let settings = {
-    //   ...defaultSettings,
-    //   setPosition: { lat: 45.19776, lon: 5.73178, altitude: 270 },
-    // };
-    localStorage.clear();
-    const now = new Date();
+    // localStorage.clear();
     let settings = {
         ...(localStorage.getItem('settings')
             ? JSON.parse(localStorage.getItem('settings'))
             : {
+                  ...defaultSettings,
                   far: 50000,
                   near: 1,
                   dark: false,
@@ -83,25 +70,24 @@
                   outline: false,
                   mapMap: true,
                   debug: false,
-                  secondsInDay: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
-                  dayNightCycle: false,
                   readFeatures: false,
-                  generateColor: false,
                   maxZoomForPeaks: 0,
                   exageration: 1.3,
-                  outlineStroke: 1,
-                  depthBiais: 0.23,
-                  depthMultiplier: 11,
-                  setAzimuth: 0,
-                  stickToGround: false
+                  stickToGround: false,
+                  setPosition: { lat: 45.19776, lon: 5.73178 },
+                  elevation: 270
               }),
         rasterProviderZoomDelta: 0,
-        setPosition: { lat: 45.19776, lon: 5.73178, altitude: 270 },
         flipRasterImages: false
     };
     const store = writable(JSON.parse(JSON.stringify(settings)));
     store.subscribe((v) => {
         const res = diff(settings, v);
+        if (res.hasOwnProperty('local')) {
+            res['heightMaxZoom'] = res['local'] ? 12 : 15;
+            res['terrarium'] = !res['local'];
+            res['heightMinZoom'] = 5;
+        }
         webapp && webapp.callMethods(res);
     });
     function onSettingsChanged(key, value) {
@@ -157,14 +143,19 @@
                 center: position,
                 zoom: 14
             });
-
+            const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            iconSvg.setAttribute('viewBox', '-4 -4 40 40');
+            iconSvg.setAttribute('stroke', 'black');
+            const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            iconPath.setAttribute('d', 'M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4 14.6 16 8 22.6 9.4 24 16 17.4 22.6 24 24 22.6 17.4 16 24 9.4z');
+            iconSvg.appendChild(iconPath);
             const myCustomControl = new MapboxGLButtonControl({
-                className: 'mapboxgl-ctrl-close',
                 title: 'Fullscreen mode',
                 eventHandler: (event) => {
                     event.stopPropagation();
                     setFullMap(!fullMap);
-                }
+                },
+                icon: iconSvg
             });
 
             map.addControl(myCustomControl);
@@ -182,86 +173,6 @@
                 }
             });
             mapPositionMarker = new Marker().setLngLat(position).addTo(map);
-            // // pixels the map pans when the up or down arrow is clicked
-            // var deltaDistance = 2;
-            // const KEYCODE = {
-            //   W: 87,
-            //   A: 65,
-            //   S: 83,
-            //   D: 68,
-            //   Q: 81,
-            //   E: 69,
-            //   ARROW_LEFT: 37,
-            //   ARROW_UP: 38,
-            //   ARROW_RIGHT: 39,
-            //   ARROW_DOWN: 40,
-            // };
-
-            // map.dragPan.disable();
-            // map.dragRotate.disable();
-            // map.doubleClickZoom.disable();
-            // map.keyboard.enable();
-            // map.on('load', function () {
-            //   map.getCanvas().focus();
-
-            //   var isMoving = false;
-            //   var offset;
-            //   // map.getCanvas().addEventListener('contextmenu', (e) => {});
-            //   map.on('mousedown', (e) => {
-            //     console.log('mousedown', e);
-            //     if (e.originalEvent.button === 0) {
-            //       isMoving = true;
-            //       offset = e.originalEvent;
-            //     }
-            //   });
-            //   map.on('mousemove', (e) => {
-            //     console.log('mousemove', e, isMoving);
-            //     if (isMoving) {
-            //       let degreesPerPixelMoved = 0.8;
-            //       const bearingDelta = (e.originalEvent.x - offset.x) * degreesPerPixelMoved;
-            //       if (bearingDelta) {
-            //         map.setBearing(map.getBearing() + bearingDelta);
-            //       }
-            //       degreesPerPixelMoved = -0.5;
-            //       const pitchDelta = (e.originalEvent.y - offset.y) * degreesPerPixelMoved;
-            //       if (pitchDelta) {
-            //         map.setPitch(map.getPitch() + pitchDelta);
-            //       }
-            //       offset = e.originalEvent;
-            //     }
-            //   });
-            //   map.on('mouseup', (e) => {
-            //     isMoving = false;
-            //   });
-            //   map.getCanvas().addEventListener(
-            //     'keydown',
-            //     function (e) {
-            //       e.preventDefault();
-            //       if (e.which === KEYCODE.W) {
-            //         // up
-            //         map.panBy([0, -deltaDistance], {
-            //           easing: easing,
-            //         });
-            //       } else if (e.which === KEYCODE.S) {
-            //         // down
-            //         map.panBy([0, deltaDistance], {
-            //           easing: easing,
-            //         });
-            //       } else if (e.which === KEYCODE.A) {
-            //         // left
-            //         map.panBy([-deltaDistance, 0], {
-            //           easing: easing,
-            //         });
-            //       } else if (e.which === KEYCODE.D) {
-            //         // right
-            //         map.panBy([deltaDistance, 0], {
-            //           easing: easing,
-            //         });
-            //       }
-            //     },
-            //     true
-            //   );
-            // });
         } catch (error) {
             console.error(error);
         }
@@ -269,13 +180,7 @@
 
     async function spawn(cmd, args, cwd?) {
         const command = new Command(cmd, args, { cwd: cwd });
-        // command.on('close', (data) => {
-        //   console.log(`command finished with code ${data.code} and signal ${data.signal}`);
-        // });
         command.on('error', (error) => console.error(`command error: "${error}"`));
-        // command.stdout.on('data', (line) => onMessage(`command stdout: "${line}"`));
-        // command.stderr.on('data', (line) => onMessage(`command stderr: "${line}"`));
-
         return command.spawn();
     }
     async function exec(cmd, args, cwd?) {
@@ -355,36 +260,87 @@
                 break;
         }
     });
+
+    let ref = null;
+    let active = false;
+    let value = '';
+    let selectedResultIndex = -1;
+    // let events = [];
+    let results = [];
+
+    async function actualSearchText(query: string) {
+        if (!query || query.length === 0) {
+            results = [];
+            return;
+        }
+        const osmRes = await queryAddress(query);
+        results = osmRes.map((r) => ({
+            ... getAddressLabel(r),
+            data: r
+        }));
+    }
+    const searchText = debounce(actualSearchText, 500);
+
+    $: lowerCaseValue = value.toLowerCase();
+    $: searchText(value);
+
+    $: onSelectedAddress(selectedResultIndex);
+
+    $: if (results.length === 0) selectedResultIndex = -1;
+
+    function onSelectedAddress(index) {
+        if (index < 0 || results.length < index + 1) {
+            return;
+        }
+        const selectedAddress = results[index].data;
+        const geometry = selectedAddress.geometry;
+        if (geometry.type === 'Point') {
+            webapp?.setPosition({
+                lat: geometry.coordinates[1],
+                lon: geometry.coordinates[0]
+            });
+        }
+    }
+
 </script>
 
 <div class="drawer-container">
-    <Drawer class="drawer" variant="modal" bind:open={drawerOpened}>
-        <Content class="drawer-content">
-            <Subheader component={H6}>Settings</Subheader>
-            <CheckComponent title="mapMap" bind:checked={$store.mapMap} />
-            <CheckComponent title="DayNight Cycle" bind:checked={$store.dayNightCycle} />
-            <CheckComponent title="Shadows" bind:checked={$store.shadows} />
-            <CheckComponent title="Dark Mode" bind:checked={$store.dark} />
-            <CheckComponent title="Map Outline" bind:checked={$store.outline} />
+    <Header company="GPS" platformName="Mocker" bind:isSideNavOpen={drawerOpened}>
+        <svelte:fragment slot="skip-to-content">
+            <SkipToContent />
+        </svelte:fragment>
+        <HeaderUtilities>
+            <HeaderSearch id="search-btn" bind:active bind:value bind:selectedResultIndex placeholder="Search location" {results} />
+            <HeaderAction bind:isOpen={drawerOpened}>
+                <div class="drawer-content">
+                    <h3>Settings</h3>
+                    <Checkbox bind:checked={$store.local} labelText="Local data" disabled={!$store.localURL || $store.localURL.length === 0} />
 
-            <SliderComponent title="Viewing Distance" min="0" max="400000" step="1" bind:value={$store.far} labelId="farLabel" />
-            <SliderComponent title="Exageration" bind:value={$store.exageration} min="0" max="4" step="0.01" labelId="exagerationLabel" />
-            <SliderComponent title="Depth Multiplier" min="0" max="200" step="1" bind:value={$store.depthMultiplier} labelId="depthMultiplierLabel" />
+                    <TextInput bind:value={$store.localURL} label="Local Host URL" autocomplete="off" spellcheck="false" autocorrect="off" helperText="Host URL for local data (tileserver-gl)" />
+                    <HeaderPanelDivider />
+                    <Checkbox bind:checked={$store.mapMap} labelText="Map Mode" />
+                    <Checkbox bind:checked={$store.dark} labelText="Dark Mode" />
+                    <Checkbox bind:checked={$store.outline} labelText="Map Outline" />
+                    <HeaderPanelDivider />
+                    <Slider bind:value={$store.far} min={0} max={400000} step={1} labelText="Viewing Distance" maxLabel="400km" hideTextInput />
+                    <Slider bind:value={$store.exageration} min={0} max={4} step={0.01} labelText="Exageration" hideTextInput />
+                    <Slider bind:value={$store.outlineStroke} min={0} max={10} step={0.01} labelText="Outline Stroke Width" hideTextInput />
+                    <Slider bind:value={$store.elevation} min={0} max={9000} labelText="Elevation" maxLabel="9000m" hideTextInput />
+                    <!-- <SliderComponent title="Time of Day" min="0" max="86400" step="1" bind:value={$store.secondsInDay} labelId="secondsInDayLabel" /> -->
+                </div>
+            </HeaderAction>
+        </HeaderUtilities>
+    </Header>
 
-            <SliderComponent title="Depth Biais" min="0" max="10" step="0.01" bind:value={$store.depthBiais} labelId="depthBiaisLabel" />
-            <SliderComponent title="Outline Stroke Width" min="0" max="10" step="0.01" bind:value={$store.outlineStroke} labelId="outlineStrokeLabel" />
-            <SliderComponent title="Time of Day" min="0" max="86400" step="1" bind:value={$store.secondsInDay} labelId="secondsInDayLabel" />
-        </Content>
-    </Drawer>
-    <Scrim fixed={false} />
-    <AppContent id="app-content">
+    <Content id="app-content">
         <video id="video" autoplay playsinline>
             <track kind="captions" />
         </video>
         <canvas id="canvas" style="background-color: transparent; position: absolute; top: 0px; left: 0px; width: 100%; height: 100%" />
         <canvas id="canvas4" style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 100%; height: 100%" />
+
         <div
-            style="position:absolute; width:100%;height:100%;display:flex; pointer-events:none;"
+            style="width:100%;height:100%;display:flex; pointer-events:none;"
             on:click={() => {
                 if (!fullMap) {
                     setFullMap(true);
@@ -396,47 +352,12 @@
                 class="map"
                 id="map"
                 bind:this={mapContainer}
-                style:width={fullMap ? '100%' : '20%'}
-                style:height={fullMap ? '100%' : '20%'}
-                style="align-self:flex-end;margin: 20px;"
+                style:width={fullMap ? '100%' : '24%'}
+                style:height={fullMap ? '100%' : '24%'}
+                style="align-self:flex-end;margin: 0px;"
             />
         </div>
 
-        <div
-            style="pointer-events: none;
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    z-index: 100;
-    justify-content: center;"
-        >
-            <Autocomplete
-                textfield$variant="filled"
-                search={queryAddress}
-                clearOnBlur={true}
-                class="autocomplete"
-                getOptionLabel={getAddressLabel}
-                bind:value={selectedAddress}
-                showMenuWithNoInput={false}
-                label="Enter address here..."
-            >
-                <Text slot="loading" style="display: flex; width: 100%; justify-content: center; align-items: center;">
-                    <CircularProgress style="height: 24px; width: 24px;" indeterminate />
-                </Text>
-            </Autocomplete>
-        </div>
-        <IconButton class="material-icons" on:click={() => (drawerOpened = !drawerOpened)}>menu</IconButton>
-        <Group
-            style="display: flex; bottom: 10px;
-    right: 10px;
-    position: absolute; justify-content: center; align-items: center;"
-        >
-            <Text id="elevationLabel" />
-            <Text>&#160;m</Text>
-        </Group>
-
-        <input id="elevation" type="range" min="0" max="9000" />
         <div id="compass" on:click={() => webapp?.setAzimuth(0)}>
             <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
                 <path d="m192.265625 8.027344c-89.882813 23.144531-161.09375 94.351562-184.238281 184.234375l29.0625 7.472656c20.40625-79.292969 83.355468-142.242187 162.644531-162.644531zm0 0" />
@@ -459,18 +380,5 @@
             <div id="compass_slice" />
         </div>
         <label id="compass_label" />
-        <div id="selectedPeakHolder">
-            <div id="selectedPeak">
-                <label id="selectedPeakLabel" on:click={() => webapp?.focusSelectedItem()} />
-                <button id="gotopeak_button" on:click={() => webapp?.goToSelectedItem()}>
-                    <svg style="width: 24px; height: 24px" viewBox="0 0 24 24">
-                        <path
-                            fill="#ffffff"
-                            d="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M3.05,13H1V11H3.05C3.5,6.83 6.83,3.5 11,3.05V1H13V3.05C17.17,3.5 20.5,6.83 20.95,11H23V13H20.95C20.5,17.17 17.17,20.5 13,20.95V23H11V20.95C6.83,20.5 3.5,17.17 3.05,13M12,5A7,7 0 0,0 5,12A7,7 0 0,0 12,19A7,7 0 0,0 19,12A7,7 0 0,0 12,5Z"
-                        />
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </AppContent>
+    </Content>
 </div>

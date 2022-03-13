@@ -1,28 +1,4 @@
 
-/* fallback */
-@font-face {
-  font-family: 'Material Icons';
-  font-style: normal;
-  font-weight: 400;
-  src: url(./material-icons.woff2) format('woff2');
-}
-
-.material-icons {
-  font-family: 'Material Icons';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  -webkit-font-feature-settings: 'liga';
-  -webkit-font-smoothing: antialiased;
-}
-
 body {
   margin: 0;
   width: 100%;
@@ -43,6 +19,7 @@ video {
 }
 .drawer-container {
   position: absolute;
+  display:contents;
   min-width: 100%;
   min-height: 100%;
 }
@@ -64,9 +41,11 @@ video {
   width: 20%;
 }
 #app-content {
-  position: absolute;
-  min-width: 100%;
-  min-height: 100%;
+  display:flex;
+  height: 100%;
+  width: 100%;
+  /* position: absolute; */
+  padding-bottom:5rem;
   background: linear-gradient(180deg, rgba(161, 216, 232, 1) 0%, rgba(236, 236, 236, 1) 100%);
 }
 
@@ -122,8 +101,8 @@ video {
   position: absolute;
   background: none;
   border: none;
-  top: 0;
-  right: 0px;
+  top: 3rem;
+  left: 0px;
   opacity: 0.9;
   width: 50px;
   height: 50px;
@@ -132,8 +111,8 @@ video {
 }
 #compass_label {
   position: absolute;
-  top: 70px;
-  right: 20px;
+  top: calc(3rem + 70px);
+  left: 20px;
   opacity: 0.9;
 }
 #compass svg {
@@ -197,4 +176,16 @@ video {
 
 .mapboxgl-ctrl-close {
   background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCI+ICAgIDx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkeT0iLjM1ZW0iIHN0eWxlPSJmb250LXNpemU6IDE0cHg7IGZvbnQtZmFtaWx5OiAnSGVsdmV0aWNhIE5ldWUnLEFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmOyBmb250LXdlaWdodDogYm9sZDsgdGV4dC1hbmNob3I6IG1pZGRsZTsiPjJEPC90ZXh0Pjwvc3ZnPg==);
+}
+
+.bx--header-panel--expanded {
+  background-color:#000000aa !important;
+  width: 20rem !important;
+}
+.bx--header {
+  background-color:#000000aa !important;
+}
+
+.bx--header__global :nth-child(1) {
+  background-color:transparent !important;
 }

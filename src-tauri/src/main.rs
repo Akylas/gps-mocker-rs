@@ -78,18 +78,6 @@ fn main() {
       install_apk,
       send_location_to_simulators
     ])
-    .create_window("main", WindowUrl::default(), |win, webview| {
-      let win = win
-        .title("GPS Mocker")
-        .resizable(true)
-        .decorations(true)
-        .always_on_top(false)
-        .inner_size(800.0, 550.0)
-        .min_inner_size(400.0, 200.0)
-        .skip_taskbar(false)
-        .fullscreen(false);
-      return (win, webview);
-    })
     .menu(Menu::with_items([
       #[cfg(target_os = "macos")]
       MenuEntry::Submenu(Submenu::new(
@@ -159,6 +147,19 @@ fn main() {
       //   _ => {}
       // }
     })
+    .create_window("main", WindowUrl::default(), |win, webview| {
+      let win = win
+        .title("GPS Mocker")
+        .resizable(true)
+        .decorations(true)
+        .always_on_top(false)
+        .inner_size(1000.0, 650.0)
+        .min_inner_size(400.0, 200.0)
+        .skip_taskbar(false)
+        .fullscreen(false);
+      return (win, webview);
+    })
+    .unwrap() // safe to unwrap: window label is valid
     .run(ctx)
     .expect("error while running tauri application");
 }

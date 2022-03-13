@@ -39,7 +39,7 @@
         "frameworks": [],
         "minimumSystemVersion": "10.13",
         "useBootstrapper": false,
-        "exceptionDomain": "",
+        "exceptionDomain": "localhost",
         "signingIdentity": null,
         "entitlements": null
       },
