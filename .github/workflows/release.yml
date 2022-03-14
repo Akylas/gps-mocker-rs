@@ -13,11 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-latest]
+        platform: [macos-10.15]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+        with:
+          submodules: true
 
       - name: Node.js setup
         uses: actions/setup-node@v2
