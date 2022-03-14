@@ -13,37 +13,54 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-10.15, windows-latest]
+        platform: [macos-10.15, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
       - name: Node.js setup
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v2
         with:
-          node-version: 14
+          node-version: 16
+          cache: "yarn"
 
       - name: Rust setup
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - uses: Swatinem/rust-cache@v1
+        with:
+          working-directory: "src-tauri"
 
       - name: Install webkit2gtk (ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y webkit2gtk-4.0
+          sudo apt-get install -y libgtk-3-dev webkit2gtk-4.0 libappindicator3-dev librsvg2-dev patchelf
 
-      - run: npm install
+      - name: install app dependencies and build it
+        run: yarn install && yarn run build
 
-      - run: npm run build
+      - name: Update CHANGELOG
+        id: changelog
+        uses: Requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.ref_name }}
 
       - uses: tauri-apps/tauri-action@dev
-        env:
+         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
+          tagName: __VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
+          releaseName: "__VERSION__"
+          releaseBody: ${{ steps.changelog.outputs.changes }}
           releaseDraft: true
           prerelease: false
+      - name: Commit CHANGELOG.md
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          branch: main
+          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
+          file_pattern: CHANGELOG.md
