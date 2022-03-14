@@ -48,9 +48,8 @@ jobs:
         with:
           token: ${{ github.token }}
           tag: ${{ github.ref_name }}
-
       - uses: tauri-apps/tauri-action@dev
-         env:
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: __VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
