@@ -56,8 +56,7 @@
   "dependencies": {
     "@fragaria/address-formatter": "^2.8.0",
     "carbon-components": "^10.55.1",
-    "carbon-components-svelte": "^0.60.0",
-    "carbon-icons-svelte": "^10.44.4",
+    "carbon-components-svelte": "^0.61.1",
     "deep-object-diff": "^1.1.7",
     "maplibre-gl": "^2.1.7"
   }
