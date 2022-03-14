@@ -43,6 +43,13 @@ jobs:
       - name: install app dependencies and build it
         run: yarn install && yarn --cwd src/geo-three install
 
+      - name: Update CHANGELOG
+        id: changelog
+        uses: Requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.ref_name }}
+          excludeTypes: build,docs,other,style,chore
       - uses: tauri-apps/tauri-action@dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,14 +59,6 @@ jobs:
           releaseBody: ${{ steps.changelog.outputs.changes }}
           releaseDraft: true
           prerelease: false
-      
-      - name: Update CHANGELOG
-        id: changelog
-        uses: Requarks/changelog-action@v1
-        with:
-          token: ${{ github.token }}
-          tag: ${{ github.ref_name }}
-          excludeTypes: build,docs,other,style,chore
       - name: Commit CHANGELOG.md
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
