@@ -28,23 +28,34 @@ jobs:
           tag: ${{ github.ref_name }}
           excludeTypes: build,docs,other,style,chore
       - name: get version
-        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+        uses: SebRollen/toml-action@v1.0.0
+        id: read_version
+        with:
+          file: 'src-tauri/Cargo.toml'
+          field: 'package.version'
       - name: create release
         id: create_release
         uses: ncipollo/release-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag: ${{ env.PACKAGE_VERSION }}
-          name: "${{ env.PACKAGE_VERSION }}"
+          tag: ${{ steps.read_version.outputs.value }}
+          name: "${{ steps.read_version.outputs.value }}"
           body: ${{ steps.changelog.outputs.changes }}
-          draft: true
+      
+      - name: Commit CHANGELOG.md
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          branch: master
+          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
+          file_pattern: CHANGELOG.md
+
   build-tauri:
     needs: create-release
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-10.15]
+        platform: [macos-10.15, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
@@ -77,19 +88,11 @@ jobs:
       - uses: tauri-apps/tauri-action@dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_IDENTITY_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         with:
-          releaseId: ${{ needs.create-release.outputs.id }}
-      
-      - name: Update CHANGELOG
-        id: changelog
-        uses: Requarks/changelog-action@v1
-        with:
-          token: ${{ github.token }}
-          tag: ${{ github.ref_name }}
-          excludeTypes: build,docs,other,style,chore
-      - name: Commit CHANGELOG.md
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          branch: master
-          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
-          file_pattern: CHANGELOG.md
+          releaseId: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}
