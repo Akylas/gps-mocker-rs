@@ -4,6 +4,6 @@ const tracker = {
   }
   
   module.exports = {
-    bumpFiles: [tracker],
+    // bumpFiles: [tracker],
     packageFiles: [tracker]
   }
