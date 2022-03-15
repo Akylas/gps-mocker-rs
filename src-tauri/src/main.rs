@@ -21,32 +21,31 @@ use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 
 #[tauri::command]
 fn send_location_to_simulators(lat: f32, lon: f32, devices: Vec<String>) {
-  if cfg!(target_os = "macos") {
-    unsafe {
-      let mkstr = |s: String| { NSString::alloc(nil).init_str(s.as_str()) };
-      let keys = vec![
-        NSString::alloc(nil).init_str("simulateLocationLatitude"),
-        NSString::alloc(nil).init_str("simulateLocationLongitude"),
-        NSString::alloc(nil).init_str("simulateLocationDevices"),
-      ];
-      let devices_vec = devices.clone().into_iter().map(&mkstr).collect::<Vec<_>>();
-      let objects = vec![
-        msg_send![class!(NSNumber), numberWithFloat: lat],
-        msg_send![class!(NSNumber), numberWithFloat: lon],
-        NSArray::arrayWithObjects(nil, &devices_vec)
-      ];
-      let keys_array = NSArray::arrayWithObjects(nil, &keys);
-      let objs_array = NSArray::arrayWithObjects(nil, &objects);
-      let notification_center: &Object =
-        msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
-      let _: () = msg_send![
-          notification_center,
-          postNotificationName: NSString::alloc(nil).init_str("com.apple.iphonesimulator.simulateLocation")
-          object: nil
-          userInfo: NSDictionary::dictionaryWithObjects_forKeys_(nil, objs_array, keys_array)
-          deliverImmediately: YES
-      ];
-    }
+  #[cfg(target_os = "macos")]
+  unsafe {
+    let mkstr = |s: String| { NSString::alloc(nil).init_str(s.as_str()) };
+    let keys = vec![
+      NSString::alloc(nil).init_str("simulateLocationLatitude"),
+      NSString::alloc(nil).init_str("simulateLocationLongitude"),
+      NSString::alloc(nil).init_str("simulateLocationDevices"),
+    ];
+    let devices_vec = devices.clone().into_iter().map(&mkstr).collect::<Vec<_>>();
+    let objects = vec![
+      msg_send![class!(NSNumber), numberWithFloat: lat],
+      msg_send![class!(NSNumber), numberWithFloat: lon],
+      NSArray::arrayWithObjects(nil, &devices_vec)
+    ];
+    let keys_array = NSArray::arrayWithObjects(nil, &keys);
+    let objs_array = NSArray::arrayWithObjects(nil, &objects);
+    let notification_center: &Object =
+      msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
+    let _: () = msg_send![
+        notification_center,
+        postNotificationName: NSString::alloc(nil).init_str("com.apple.iphonesimulator.simulateLocation")
+        object: nil
+        userInfo: NSDictionary::dictionaryWithObjects_forKeys_(nil, objs_array, keys_array)
+        deliverImmediately: YES
+    ];
   }
 }
 
@@ -133,7 +132,7 @@ fn main() {
         Menu::with_items([CustomMenuItem::new("learn_more", "Learn More").into()]),
       )),
     ]))
-    .on_menu_event(|event| {
+    // .on_menu_event(|event| {
       // let event_name = event.menu_item_id();
       // println!("on_menu_event {:?}", event_name);
       // match event_name {
@@ -146,7 +145,7 @@ fn main() {
       //   }
       //   _ => {}
       // }
-    })
+    // })
     .create_window("main", WindowUrl::default(), |win, webview| {
       let win = win
         .title("GPS Mocker")
