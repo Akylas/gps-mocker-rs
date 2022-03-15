@@ -44,7 +44,8 @@ jobs:
           name: Release ${{ steps.changelog_reader.outputs.version }}
           body: ${{ steps.changelog_reader.outputs.changes }}
           prerelease: ${{ steps.changelog_reader.outputs.status == 'prereleased' }}
-          draft: ${{ steps.changelog_reader.outputs.status == 'unreleased' }}
+          # we create first the release as draft. Will be published once everything is done
+          draft: true
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -94,3 +95,10 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}
+  update-release:
+    needs: build-tauri
+      - name: Update release
+        uses: irongut/EditRelease@v1.1.0
+        with:
+          id: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}
+          draft: false
