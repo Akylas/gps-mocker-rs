@@ -9,7 +9,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      RELEASE_UPLOAD_ID: ${{ steps.create_release.outputs.id }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: setup node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16
+      - name: Update CHANGELOG
+        id: changelog
+        uses: Requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.ref_name }}
+          excludeTypes: build,docs,other,style,chore
+      - name: get version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+      - name: create release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag: ${{ env.PACKAGE_VERSION }}
+          name: "${{ env.PACKAGE_VERSION }}"
+          body: ${{ steps.changelog.outputs.changes }}
+          draft: true
+  build-tauri:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +74,12 @@ jobs:
       - name: install app dependencies and build it
         run: yarn install && yarn --cwd src/geo-three install
 
+      - uses: tauri-apps/tauri-action@dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.id }}
+      
       - name: Update CHANGELOG
         id: changelog
         uses: Requarks/changelog-action@v1
@@ -50,15 +87,6 @@ jobs:
           token: ${{ github.token }}
           tag: ${{ github.ref_name }}
           excludeTypes: build,docs,other,style,chore
-      - uses: tauri-apps/tauri-action@dev
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: __VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
-          releaseName: "__VERSION__"
-          releaseBody: ${{ steps.changelog.outputs.changes }}
-          releaseDraft: true
-          prerelease: false
       - name: Commit CHANGELOG.md
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
