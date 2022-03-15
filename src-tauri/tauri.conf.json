@@ -13,7 +13,8 @@
       "active": true,
       "targets": [
         "app",
-        "msi"
+        "msi",
+        "deb"
       ],
       "identifier": "com.akylas.gpsmocker",
       "icon": [
