@@ -20,19 +20,18 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 16
-      - name: Update CHANGELOG
-        id: changelog
-        uses: Requarks/changelog-action@v1
+      - name: Get version from tag
+        id: tag_name
+        run: |
+          echo ::set-output name=current_version::${GITHUB_REF#refs/tags/v}
+      - name: Get Changelog Entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2
         with:
-          token: ${{ github.token }}
-          tag: ${{ github.ref_name }}
-          excludeTypes: build,docs,other,style,chore
-      - name: get version
-        uses: SebRollen/toml-action@v1.0.0
-        id: read_version
-        with:
-          file: 'src-tauri/Cargo.toml'
-          field: 'package.version'
+          validation_depth: 10
+          version: ${{ steps.tag_name.outputs.current_version }}
+          path: ./CHANGELOG.md
+
       - name: create release
         id: create_release
         uses: ncipollo/release-action@v1
@@ -42,13 +41,6 @@ jobs:
           tag: ${{ github.ref_name }}
           name: "${{ steps.read_version.outputs.value }}"
           body: ${{ steps.changelog.outputs.changes }}
-      
-      - name: Commit CHANGELOG.md
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          branch: master
-          commit_message: 'docs: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]'
-          file_pattern: CHANGELOG.md
 
   build-tauri:
     needs: create-release
