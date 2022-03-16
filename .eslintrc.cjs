@@ -15,7 +15,7 @@ module.exports = {
     },
     parserOptions: {
         sourceType: 'module',
-        project: 'tsconfig.eslint.json',
+        project: ['tsconfig.eslint.json'],
         extraFileExtensions: ['.cjs'],
         ecmaVersion: 2019
     },
