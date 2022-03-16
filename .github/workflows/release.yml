@@ -97,6 +97,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}
   update-release:
     needs: build-tauri
+    runs-on: ubuntu-latest
     steps:
       - name: Update release
         uses: irongut/EditRelease@v1.1.0
