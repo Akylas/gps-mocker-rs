@@ -11,7 +11,7 @@
     import { writable } from 'svelte/store';
     import { settings as defaultSettings } from '../geo-three/webapp/settings';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
-    let webapp;
+   let webapp;
 
     let drawerOpened = false;
     let fullMap = false;
