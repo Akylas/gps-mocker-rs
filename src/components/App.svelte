@@ -8,10 +8,11 @@
     import { Map, Marker, NavigationControl } from 'maplibre-gl';
     import 'maplibre-gl/dist/maplibre-gl.css';
     import { onMount } from 'svelte';
+    import { _ } from 'svelte-i18n';
     import { writable } from 'svelte/store';
     import { settings as defaultSettings } from '../geo-three/webapp/settings';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
-   let webapp;
+    let webapp;
 
     let drawerOpened = false;
     let fullMap = false;
@@ -39,13 +40,13 @@
             return '';
         }
         const { type, osm_id, osm_value, osm_key, osm_type, extent, ...toFormat } = obj.properties;
-        toFormat.country_code=toFormat.countrycode;
+        toFormat.country_code = toFormat.countrycode;
         delete toFormat.countrycode;
-        const res= (format.format(toFormat, { output: 'string', fallbackCountryCode: 'FR' } as any) as string).split('\n');
-        return  {
-            text:res[0],
-            description:res.slice(1).join(' ')
-        }
+        const res = (format.format(toFormat, { output: 'string', fallbackCountryCode: 'FR' } as any) as string).split('\n');
+        return {
+            text: res[0],
+            description: res.slice(1).join(' ')
+        };
     }
     async function queryAddress(query: string) {
         if (!query || query.length === 0) {
@@ -275,7 +276,7 @@
         }
         const osmRes = await queryAddress(query);
         results = osmRes.map((r) => ({
-            ... getAddressLabel(r),
+            ...getAddressLabel(r),
             data: r
         }));
     }
@@ -301,7 +302,6 @@
             });
         }
     }
-
 </script>
 
 <div class="drawer-container">
@@ -310,22 +310,22 @@
             <SkipToContent />
         </svelte:fragment>
         <HeaderUtilities>
-            <HeaderSearch id="search-btn" bind:active bind:value bind:selectedResultIndex placeholder="Search location" {results} />
+            <HeaderSearch id="search-btn" bind:active bind:value bind:selectedResultIndex placeholder={$_('search_location')} {results} />
             <HeaderAction bind:isOpen={drawerOpened}>
                 <div class="drawer-content">
                     <h3>Settings</h3>
-                    <Checkbox bind:checked={$store.local} labelText="Local data" disabled={!$store.localURL || $store.localURL.length === 0} />
+                    <Checkbox bind:checked={$store.local} labelText={$_('local_data')} disabled={!$store.localURL || $store.localURL.length === 0} />
 
-                    <TextInput bind:value={$store.localURL} label="Local Host URL" autocomplete="off" spellcheck="false" autocorrect="off" helperText="Host URL for local data (tileserver-gl)" />
+                    <TextInput bind:value={$store.localURL} label={$_('localhost_url')} autocomplete="off" spellcheck="false" autocorrect="off" helperText="Host URL for local data (tileserver-gl)" />
                     <HeaderPanelDivider />
-                    <Checkbox bind:checked={$store.mapMap} labelText="Map Mode" />
-                    <Checkbox bind:checked={$store.dark} labelText="Dark Mode" />
-                    <Checkbox bind:checked={$store.outline} labelText="Map Outline" />
+                    <Checkbox bind:checked={$store.mapMap} labelText={$_('map_mode')} />
+                    <Checkbox bind:checked={$store.dark} labelText={$_('dark_mode')} />
+                    <Checkbox bind:checked={$store.outline} labelText={$_('map_outline')} />
                     <HeaderPanelDivider />
-                    <Slider bind:value={$store.far} min={0} max={400000} step={1} labelText="Viewing Distance" maxLabel="400km" hideTextInput />
-                    <Slider bind:value={$store.exageration} min={0} max={4} step={0.01} labelText="Exageration" hideTextInput />
-                    <Slider bind:value={$store.outlineStroke} min={0} max={10} step={0.01} labelText="Outline Stroke Width" hideTextInput />
-                    <Slider bind:value={$store.elevation} min={0} max={9000} labelText="Elevation" maxLabel="9000m" hideTextInput />
+                    <Slider bind:value={$store.far} min={0} max={400000} step={1} labelText={$_('viewing_distance')} maxLabel="400km" hideTextInput />
+                    <Slider bind:value={$store.exageration} min={0} max={4} step={0.01} labelText={$_('exageration')} hideTextInput />
+                    <Slider bind:value={$store.outlineStroke} min={0} max={10} step={0.01} labelText={$_('outline_stroke_width')} hideTextInput />
+                    <Slider bind:value={$store.elevation} min={0} max={9000} labelText={$_('elevation')} maxLabel="9000m" hideTextInput />
                     <!-- <SliderComponent title="Time of Day" min="0" max="86400" step="1" bind:value={$store.secondsInDay} labelId="secondsInDayLabel" /> -->
                 </div>
             </HeaderAction>

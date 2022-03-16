@@ -60,7 +60,8 @@
     "carbon-components": "^10.55.1",
     "carbon-components-svelte": "^0.61.1",
     "deep-object-diff": "^1.1.7",
-    "maplibre-gl": "^2.1.7"
+    "maplibre-gl": "^2.1.7",
+    "svelte-i18n": "^3.3.13"
   },
   "version": "1.1.0"
 }

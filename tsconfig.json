@@ -14,6 +14,8 @@
 
     "noImplicitAny": false,
     "strictNullChecks": false,
+    
+    "resolveJsonModule": true,
 
     // Prevent type errors
     "types": ["svelte"],
