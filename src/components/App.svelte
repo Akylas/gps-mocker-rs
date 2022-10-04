@@ -1,5 +1,5 @@
 <script lang="ts">
-    import format from '@fragaria/address-formatter';
+    import addressFormatter from '@fragaria/address-formatter';
     import { invoke } from '@tauri-apps/api';
     import { listen } from '@tauri-apps/api/event';
     import { Command, open } from '@tauri-apps/api/shell';
@@ -42,7 +42,7 @@
         const { type, osm_id, osm_value, osm_key, osm_type, extent, ...toFormat } = obj.properties;
         toFormat.country_code = toFormat.countrycode;
         delete toFormat.countrycode;
-        const res = (format.format(toFormat, { output: 'string', fallbackCountryCode: 'FR' } as any) as string).split('\n');
+        const res = (addressFormatter.format(toFormat, { output: 'string', fallbackCountryCode: 'FR' } as any) as string).split('\n');
         return {
             text: res[0],
             description: res.slice(1).join(' ')
@@ -79,11 +79,14 @@
                   elevation: 270
               }),
         rasterProviderZoomDelta: 0,
-        flipRasterImages: false
+        flipRasterImages: true
     };
     const store = writable(JSON.parse(JSON.stringify(settings)));
     store.subscribe((v) => {
         const res = diff(settings, v);
+        if (res.hasOwnProperty('localURL')) {
+            res['flipRasterImages'] = !res['localURL'];
+        }
         if (res.hasOwnProperty('local')) {
             res['heightMaxZoom'] = res['local'] ? 12 : 15;
             res['terrarium'] = !res['local'];
