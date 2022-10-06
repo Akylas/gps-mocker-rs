@@ -4,6 +4,6 @@ build
 
 src-tauri/target
 src-tauri/WixTools
-pnpm-lock.yaml
 package-lock.json
 /.vscode/settings.json
+/pnpm-global
