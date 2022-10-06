@@ -1,4 +1,3 @@
-
 export default class MapboxGLButtonControl {
     _className;
     _title;
@@ -16,16 +15,22 @@ export default class MapboxGLButtonControl {
 
     onAdd(map) {
         this._btn = document.createElement('button');
-        this._btn.className = 'mapboxgl-ctrl-icon' + ' ' + this._className;
+        this._btn.className = 'maplibregl-ctrl-icon' + ' ' + this._className;
+
         this._btn.type = 'button';
         this._btn.title = this._title;
         this._btn.onclick = this._eventHandler;
         if (this._icon) {
-          this._btn.appendChild(this._icon);
+            this._btn.appendChild(this._icon);
+        } else {
+            this._icon = document.createElement('span');
+            this._icon.className = 'maplibregl-ctrl-icon';
+            this._icon.setAttribute('aria-hidden', 'true');
+            this._btn.appendChild(this._icon);
         }
 
         this._container = document.createElement('div');
-        this._container.className = 'mapboxgl-ctrl-group mapboxgl-ctrl';
+        this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
         this._container.appendChild(this._btn);
 
         return this._container;

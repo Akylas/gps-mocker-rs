@@ -40,13 +40,17 @@ video {
   height: 20%;
   width: 20%;
 }
+.mapfull {
+  height: 100%;
+  width: 100%;
+}
 #app-content {
   display:flex;
   height: 100%;
   width: 100%;
   /* position: absolute; */
   padding-bottom:5rem;
-  background: linear-gradient(180deg, rgba(161, 216, 232, 1) 0%, rgba(236, 236, 236, 1) 100%);
+  /* background: linear-gradient(180deg, rgba(161, 216, 232, 1) 0%, rgba(236, 236, 236, 1) 100%); */
 }
 
 .autocomplete {
@@ -180,7 +184,7 @@ video {
 
 .bx--header-panel--expanded {
   background-color:#000000aa !important;
-  width: 20rem !important;
+  width: 18rem !important;
 }
 .bx--header {
   background-color:#000000aa !important;
@@ -188,4 +192,8 @@ video {
 
 .bx--header__global :nth-child(1) {
   background-color:transparent !important;
+}
+
+#app-content {
+  padding: 0px !important;
 }

@@ -13,7 +13,7 @@ type GeolocateOptions = {
 interface Position {
     lat: number;
     lon: number;
-    altitude: number;
+    altitude?: number;
     accuracy?: number;
 }
 
@@ -136,31 +136,34 @@ export default class UserLocationControl extends Evented implements IControl {
         return bounds && (position.lon < bounds.getWest() || position.lon > bounds.getEast() || position.lat < bounds.getSouth() || position.lat > bounds.getNorth());
     }
 
+    get currentPosition() {
+        return this._lastKnownPosition;
+    }
+
     /**
      * When the Geolocation API returns a new location, update the GeolocateControl.
      *
      * @param {Position} position the Geolocation API Position
      * @private
      */
-    updatePosition(position: Position) {
+    updatePosition(position: Position, forceCenter = false) {
         // console.log('updatePosition', position);
         if (!this._map) {
             // control has since been removed
             return;
         }
-
         if (this._isOutOfMapMaxBounds(position)) {
             this.fire(new Event('outofmaxbounds', position));
             this._updateMarker();
             return;
         }
 
-        if (this.options.trackUserLocation) {
-            // keep a record of the position so that if the state is BACKGROUND and the user
-            // clicks the button, we can move to ACTIVE_LOCK immediately without waiting for
-            // watchPosition to trigger _onSuccess
-            this._lastKnownPosition = position;
-        }
+        // if (this.options.trackUserLocation) {
+        // keep a record of the position so that if the state is BACKGROUND and the user
+        // clicks the button, we can move to ACTIVE_LOCK immediately without waiting for
+        // watchPosition to trigger _onSuccess
+        this._lastKnownPosition = position;
+        // }
 
         // if showUserLocation and the watch state isn't off then update the marker location
         if (this.options.showUserLocation) {
@@ -169,14 +172,23 @@ export default class UserLocationControl extends Evented implements IControl {
 
         // if in normal mode (not watch mode), or if in watch mode and the state is active watch
         // then update the camera
-        // if (!this.options.trackUserLocation) {
-        this._updateCamera(position);
-        // }
+        if (forceCenter || !this.options.trackUserLocation) {
+            this._updateCamera(position);
+        } else {
+            const bounds = this._map.getBounds();
+            if (!bounds.contains(position)) {
+                this._updateCamera(position);
+            }
+        }
         if (this.options.showUserLocation) {
             this._dotElement.classList.remove('maplibregl-user-location-dot-stale', 'mapboxgl-user-location-dot-stale');
         }
 
         this.fire(new Event('geolocate', position));
+    }
+
+    centerOnLocation() {
+        this._updateCamera(this._lastKnownPosition);
     }
 
     /**
@@ -233,7 +245,7 @@ export default class UserLocationControl extends Evented implements IControl {
         }
     }
 
-    _setupUI(supported: boolean) {
+    _setupUI() {
         this._container.addEventListener('contextmenu', (e: MouseEvent) => e.preventDefault());
 
         if (this.options.trackUserLocation) {
@@ -244,7 +256,7 @@ export default class UserLocationControl extends Evented implements IControl {
         if (this.options.showUserLocation) {
             this._dotElement = DOM.create('div', 'maplibregl-user-location-dot mapboxgl-user-location-dot');
 
-            this._userLocationDotMarker = new Marker(this._dotElement);
+            this._userLocationDotMarker = new Marker({ element: this._dotElement, pitchAlignment: 'map' });
 
             this._circleElement = DOM.create('div', 'maplibregl-user-location-accuracy-circle mapboxgl-user-location-accuracy-circle');
             this._accuracyCircleMarker = new Marker({ element: this._circleElement, pitchAlignment: 'map' });

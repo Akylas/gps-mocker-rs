@@ -7,7 +7,6 @@ const ignoreWarnings = new Set(['a11y-no-onchange', 'a11y-label-has-associated-c
 const config = require('./package.json');
 export default defineConfig(({ command, mode }) => {
     const production = mode === 'production';
-    console.log('mode', mode);
     return {
         root: './src',
         base: './', // use relative paths
@@ -19,12 +18,15 @@ export default defineConfig(({ command, mode }) => {
         },
         resolve: {
             alias: production
-                ? {}
+                ? {
+                      'mapbox-gl': 'maplibre-gl'
+                  }
                 : {
+                      'mapbox-gl': 'maplibre-gl',
                       './carbon.scss': 'carbon-components-svelte/css/g90.css'
                   }
         },
-        optimizeDeps:{
+        optimizeDeps: {
             // include: ['geo-three']
         },
         build: {

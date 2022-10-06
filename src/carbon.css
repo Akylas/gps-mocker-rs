@@ -850,7 +850,7 @@ h1 {
 
 h2 {
   font-size: 2rem;
-  font-weight: 400;
+  font-weight: 300;
   line-height: 1.25;
   letter-spacing: 0; }
 
@@ -2369,12 +2369,12 @@ path:not([data-icon-path]):not([fill='none']),
   .bx--btn-set--stacked .bx--btn.bx--btn--disabled:first-of-type {
     box-shadow: none; }
 
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--btn:focus {
     color: Highlight;
     outline: 1px solid Highlight; } }
 
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--btn--ghost.bx--btn--icon-only
 .bx--btn__icon
 path:not([data-icon-path]):not([fill='none']),
@@ -3054,7 +3054,7 @@ svg:hover,
 .bx--text-input-wrapper--readonly .bx--text-input {
   background: transparent; }
 
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--text-input--password__visibility,
   .bx--btn.bx--btn--icon-only.bx--text-input--password__visibility__toggle.bx--tooltip__trigger svg,
   .bx--btn.bx--btn--icon-only.bx--text-input--password__visibility__toggle.bx--tooltip__trigger:hover
@@ -3251,16 +3251,16 @@ svg {
   pointer-events: none; }
 
 /* stylelint-disable */
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--slider__thumb {
     outline: 1px solid transparent; } }
 
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--slider__thumb:focus {
     color: Highlight;
     outline: 1px solid Highlight; } }
 
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--slider__track {
     outline: 1px solid transparent; } }
 
@@ -4461,7 +4461,7 @@ a.bx--header__menu-item:focus
 .bx--side-nav .bx--header__menu-arrow {
   fill: #525252; }
 
-@media screen and (-ms-high-contrast: active), (forced-colors: active), (prefers-contrast) {
+@media screen and (-ms-high-contrast: active), (forced-colors: active) {
   .bx--side-nav__icon > svg,
   .bx--side-nav
 a.bx--header__menu-item:hover
@@ -4645,7 +4645,6 @@ a.bx--navigation-link:focus {
 
 .bx--content {
   padding: 2rem;
-  background: #525252;
   will-change: margin-left; }
 
 .bx--header ~ .bx--content {

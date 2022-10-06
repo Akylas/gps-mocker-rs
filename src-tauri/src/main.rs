@@ -2,13 +2,13 @@
   all(not(debug_assertions), target_os = "windows"),
   windows_subsystem = "windows"
 )]
-
+use byteorder::{BigEndian, ByteOrder};
+use rusty_libimobiledevice::idevice;
+use rusty_libimobiledevice::service;
 use std::process::Command;
-// use tauri::api::shell::{
-//   open
-// };
-use tauri::{CustomMenuItem, Menu, MenuEntry, MenuItem, Submenu, WindowBuilder, WindowUrl};
-// use cocoa::foundation::{NSUserDefaults};
+use tauri::{
+  AboutMetadata, CustomMenuItem, Menu, MenuEntry, MenuItem, Submenu, WindowBuilder, WindowUrl,
+};
 
 #[cfg(target_os = "macos")]
 use cocoa::{
@@ -18,12 +18,11 @@ use cocoa::{
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 
-
 #[tauri::command]
 fn send_location_to_simulators(lat: f32, lon: f32, devices: Vec<String>) {
   #[cfg(target_os = "macos")]
   unsafe {
-    let mkstr = |s: String| { NSString::alloc(nil).init_str(s.as_str()) };
+    let mkstr = |s: String| NSString::alloc(nil).init_str(s.as_str());
     let keys = vec![
       NSString::alloc(nil).init_str("simulateLocationLatitude"),
       NSString::alloc(nil).init_str("simulateLocationLongitude"),
@@ -33,7 +32,7 @@ fn send_location_to_simulators(lat: f32, lon: f32, devices: Vec<String>) {
     let objects = vec![
       msg_send![class!(NSNumber), numberWithFloat: lat],
       msg_send![class!(NSNumber), numberWithFloat: lon],
-      NSArray::arrayWithObjects(nil, &devices_vec)
+      NSArray::arrayWithObjects(nil, &devices_vec),
     ];
     let keys_array = NSArray::arrayWithObjects(nil, &keys);
     let objs_array = NSArray::arrayWithObjects(nil, &objects);
@@ -46,6 +45,96 @@ fn send_location_to_simulators(lat: f32, lon: f32, devices: Vec<String>) {
         userInfo: NSDictionary::dictionaryWithObjects_forKeys_(nil, objs_array, keys_array)
         deliverImmediately: YES
     ];
+  }
+}
+#[tauri::command]
+fn send_location_to_devices(lat: f32, lon: f32) {
+  let lat_str = lat.to_string();
+  let lon_str = lon.to_string();
+  let start_msg = 0 as i8;
+  let lat_str_length = lat_str.chars().count() as i8;
+  let lon_str_length = lon_str.chars().count() as i8;
+  let devices = match idevice::get_devices() {
+    Ok(devices) => devices,
+    Err(e) => {
+      // If the daemon is not running or does not behave as expected, this returns an error
+      // println!("Error getting devices: {:?}", e);
+      return;
+    }
+  };
+  for device in devices {
+    // Start an instproxy service on the device
+    let mut lockdown_client = match device.new_lockdownd_client("idevicesetlocation".to_string()) {
+      Ok(lockdown_client) => {
+        println!("Successfully started lockdown_client");
+        lockdown_client
+      }
+      Err(e) => {
+        println!("Error starting lockdown_client: {:?}", e);
+        return;
+      }
+    };
+    let service =
+      match lockdown_client.start_service("com.apple.dt.simulatelocation".to_string(), true) {
+        Ok(service) => {
+          println!("Successfully started service");
+          service
+        }
+        Err(e) => {
+          println!("Error starting service: {:?}", e);
+          return;
+        }
+      };
+    let service_client = match service::ServiceClient::new(&device, service) {
+      Ok(service) => {
+        println!("Successfully created service client");
+        service
+      }
+      Err(e) => {
+        println!("Error creating service client: {:?}", e);
+        return;
+      }
+    };
+    match service_client.send(u32::to_be_bytes(start_msg as u32).map(|x| x as i8).to_vec()) {
+      Ok(_) => {}
+      Err(e) => {
+        println!("Error sending message: {:?}", e);
+        return;
+      }
+    };
+
+    let mut vector_data = u32::to_be_bytes(lat_str_length as u32)
+      .map(|x| x as i8)
+      .to_vec();
+    vector_data.append(
+      &mut lat_str
+        .chars()
+        .into_iter()
+        .map(|x| x as i8)
+        .collect::<Vec<i8>>()
+        .to_vec(),
+    );
+    vector_data.append(
+      &mut u32::to_be_bytes(lon_str_length as u32)
+        .map(|x| x as i8)
+        .to_vec(),
+    );
+
+    vector_data.append(
+      &mut lon_str
+        .chars()
+        .into_iter()
+        .map(|x| x as i8)
+        .collect::<Vec<i8>>()
+        .to_vec(),
+    );
+    match service_client.send(vector_data.clone()) {
+      Ok(_) => {}
+      Err(e) => {
+        println!("Error sending message: {:?}", e);
+        return;
+      }
+    };
   }
 }
 
@@ -73,16 +162,18 @@ fn main() {
   let ctx = tauri::generate_context!();
 
   tauri::Builder::default()
+    .plugin(tauri_plugin_window_state::Builder::default().build())
     .invoke_handler(tauri::generate_handler![
       install_apk,
-      send_location_to_simulators
+      send_location_to_simulators,
+      send_location_to_devices
     ])
     .menu(Menu::with_items([
       #[cfg(target_os = "macos")]
       MenuEntry::Submenu(Submenu::new(
         &ctx.package_info().name,
         Menu::with_items([
-          MenuItem::About(ctx.package_info().name.clone()).into(),
+          MenuItem::About(ctx.package_info().name.clone(), AboutMetadata::new()).into(),
           MenuItem::Separator.into(),
           MenuItem::Services.into(),
           MenuItem::Separator.into(),
@@ -133,32 +224,32 @@ fn main() {
       )),
     ]))
     // .on_menu_event(|event| {
-      // let event_name = event.menu_item_id();
-      // println!("on_menu_event {:?}", event_name);
-      // match event_name {
-      //   "Learn More" => {
-      //     shell::open(
-      //       "https://github.com/probablykasper/tauri-template".to_string(),
-      //       None,
-      //     )
-      //     .unwrap();
-      //   }
-      //   _ => {}
-      // }
+    // let event_name = event.menu_item_id();
+    // println!("on_menu_event {:?}", event_name);
+    // match event_name {
+    //   "Learn More" => {
+    //     shell::open(
+    //       "https://github.com/probablykasper/tauri-template".to_string(),
+    //       None,
+    //     )
+    //     .unwrap();
+    //   }
+    //   _ => {}
+    // }
     // })
-    .create_window("main", WindowUrl::default(), |win, webview| {
-      let win = win
+    .setup(|app| {
+      WindowBuilder::new(app, "main", WindowUrl::default())
         .title("GPS Mocker")
         .resizable(true)
         .decorations(true)
         .always_on_top(false)
-        .inner_size(1000.0, 650.0)
-        .min_inner_size(400.0, 200.0)
+        .inner_size(800.0, 650.0)
+        .min_inner_size(300.0, 300.0)
         .skip_taskbar(false)
-        .fullscreen(false);
-      return (win, webview);
+        .fullscreen(false)
+        .build()?;
+      Ok(())
     })
-    .unwrap() // safe to unwrap: window label is valid
     .run(ctx)
     .expect("error while running tauri application");
 }

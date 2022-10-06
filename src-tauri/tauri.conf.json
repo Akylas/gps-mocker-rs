@@ -33,13 +33,11 @@
       "shortDescription": "",
       "longDescription": "",
       "deb": {
-        "depends": [],
-        "useBootstrapper": false
+        "depends": []
       },
       "macOS": {
         "frameworks": [],
         "minimumSystemVersion": "10.13",
-        "useBootstrapper": false,
         "exceptionDomain": "localhost",
         "signingIdentity": "Apple Development: Martin Guillon (4ZZRPWM525)",
         "entitlements": null
@@ -55,6 +53,9 @@
     },
     "allowlist": {
       "all": false,
+      "os": {
+        "all": true
+      },
       "shell": {
         "execute": true,
         "open": true,
@@ -73,7 +74,7 @@
       }
     },
     "security": {
-      "csp": "default-src blob: data: filesystem: ws: wss: http: https: tauri: 'unsafe-eval' 'unsafe-inline' 'self' img-src: 'self'"
+      "csp": "default-src blob: data: filesystem: ws: wss: http: https: tauri: 'unsafe-eval' 'unsafe-inline' 'self' img-src: 'self'; worker-src blob:"
     }
   }
 }

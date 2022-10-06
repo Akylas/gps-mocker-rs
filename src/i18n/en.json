@@ -1,12 +1,16 @@
 {
+  "android_emulators": "Android emulators",
   "dark_mode": "Dark mode",
   "elevation": "Elevation",
   "exageration": "Exageration",
+  "ios_devices": "iOS devices",
+  "ios_simulators": "iOS simulators",
   "local_data": "Local data",
   "localhost_url": "Local Host URL",
   "map_mode": "Map mode",
   "map_outline": "Map outline",
   "outline_stroke_width": "Outline stroke width",
   "search_location": "Search location",
+  "speed": "speed",
   "viewing_distance": "Viewing distance"
 }

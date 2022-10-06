@@ -1,21 +1,44 @@
 <script lang="ts">
     import addressFormatter from '@fragaria/address-formatter';
-    import { invoke } from '@tauri-apps/api';
+    import MapLibreGlDirections, { LoadingIndicatorControl } from '@maplibre/maplibre-gl-directions';
+    import { invoke, os } from '@tauri-apps/api';
     import { listen } from '@tauri-apps/api/event';
     import { Command, open } from '@tauri-apps/api/shell';
-    import { Checkbox, Content, Header, HeaderAction, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput, HeaderPanelDivider } from 'carbon-components-svelte';
-    import { diff } from 'deep-object-diff';
-    import { Map, Marker, NavigationControl } from 'maplibre-gl';
+    import { Checkbox, Content, Header, HeaderAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput } from 'carbon-components-svelte';
+    import { KeyboardKeyHold } from 'hold-event';
+    import { RulerControl } from 'mapbox-gl-controls';
+    import { Map, NavigationControl, TerrainControl } from 'maplibre-gl';
     import 'maplibre-gl/dist/maplibre-gl.css';
     import { onMount } from 'svelte';
     import { _ } from 'svelte-i18n';
     import { writable } from 'svelte/store';
-    import { settings as defaultSettings } from '../geo-three/webapp/settings';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
-    let webapp;
+    import UserLocationControl from './UserLocationControl';
+    let userLocationControl: UserLocationControl;
+    let osType;
+    async function getOs() {
+        if (!osType) {
+            const value = await os.type();
+            switch (value) {
+                case 'Linux':
+                    osType = 'linux';
+                    break;
+                case 'Windows_NT':
+                    osType = 'windows';
+                    break;
+                case 'Darwin':
+                    osType = 'darwin';
+                    break;
+                default:
+                    osType = 'unknown';
+                    break;
+            }
+        }
+        return osType;
+    }
 
     let drawerOpened = false;
-    let fullMap = false;
+    // let fullMap = false;
 
     // Returns a function, that, as long as it continues to be invoked, will not
     // be triggered. The function will be called after it stops being called for
@@ -32,6 +55,18 @@
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
             if (callNow) func(...args);
+        };
+    }
+
+    function throttle(fn, delay) {
+        let lastCalled = 0;
+        return (...args) => {
+            const now = new Date().getTime();
+            if (now - lastCalled < delay) {
+                return;
+            }
+            lastCalled = now;
+            return fn(...args);
         };
     }
 
@@ -57,131 +92,244 @@
             .then((data) => data.features.filter((r) => r.properties.osm_type !== 'R'))
             .catch((e) => console.error(e));
     }
-
     // localStorage.clear();
-    let settings = {
-        ...(localStorage.getItem('settings')
-            ? JSON.parse(localStorage.getItem('settings'))
-            : {
-                  ...defaultSettings,
-                  far: 50000,
-                  near: 1,
-                  dark: false,
-                  shadows: false,
-                  outline: false,
-                  mapMap: true,
-                  debug: false,
-                  readFeatures: false,
-                  maxZoomForPeaks: 0,
-                  exageration: 1.3,
-                  stickToGround: false,
-                  setPosition: { lat: 45.19776, lon: 5.73178 },
-                  elevation: 270
-              }),
-        rasterProviderZoomDelta: 0,
-        flipRasterImages: true
+    const DEFAULT_SETTINGS = {
+        position: { lat: 45.1811, lon: 5.8141 },
+        androidEmulators: true,
+        iosSimulators: true,
+        iosDevices: true,
+        speedInKm: 90
     };
-    const store = writable(JSON.parse(JSON.stringify(settings)));
-    store.subscribe((v) => {
-        const res = diff(settings, v);
-        if (res.hasOwnProperty('localURL')) {
-            res['flipRasterImages'] = !res['localURL'];
-        }
-        if (res.hasOwnProperty('local')) {
-            res['heightMaxZoom'] = res['local'] ? 12 : 15;
-            res['terrarium'] = !res['local'];
-            res['heightMinZoom'] = 5;
-        }
-        webapp && webapp.callMethods(res);
-    });
-    function onSettingsChanged(key, value) {
-        settings[key] = value;
-        if ($store[key] !== value) {
-            $store[key] = value;
-        }
+    let settings = {
+        ...(localStorage.getItem('settings') ? JSON.parse(localStorage.getItem('settings')) : DEFAULT_SETTINGS),
+        iosSimulatorsSupported: false
+    };
+    if (!settings.hasOwnProperty('position')) {
+        settings = DEFAULT_SETTINGS;
+    }
+    const store = writable(settings);
+    function onSettingsChanged() {
         localStorage.setItem('settings', JSON.stringify(settings));
     }
+    store.subscribe(onSettingsChanged);
+    getOs().then((r) => {
+        $store.iosSimulatorsSupported = r === 'darwin';
+    });
     let map: Map;
     let mapContainer;
-    let mapPositionMarker: Marker;
 
-    function setFullMap(value) {
-        fullMap = value;
-        setTimeout(() => {
-            map.resize();
-        }, 10);
+    function setTerrainSource(url) {
+        if (!map.loaded) {
+            map.once('load', () => setTerrainSource(url));
+            return;
+        }
+        try {
+            map.removeSource('terrainSource');
+        } catch (err) {}
+        try {
+            map.addSource('terrainSource', {
+                type: 'raster-dem',
+                encoding: 'terrarium',
+                tiles: [url],
+                tileSize: 256
+            });
+            // try {
+            //     map.removeLayer('hills');
+            // } catch (err) {}
+            // map.addLayer({
+            //     id: 'hills',
+            //     type: 'hillshade',
+            //     source: 'terrainSource',
+            //     layout: { visibility: 'visible' },
+            //     paint: {
+            //         'hillshade-accent-color': '#473B24',
+            //         'hillshade-exaggeration': 0.2,
+            //     }
+            // });
+        } catch (err) {
+            console.error(err);
+        }
     }
-
+    let shouldMoveOnClick = true;
+    let directions;
     onMount(async () => {
         try {
-            webapp = await import('../geo-three/webapp/app');
-            webapp.callMethods(settings);
-
-            webapp.setUpdateExternalPositionListener(sendPositionToEmulators);
-            webapp.setOnSettingsChangedListener(onSettingsChanged);
-            webapp.setUpdateExternalPositionThrottleTime(1000);
-            webapp.setKeyboardMoveSpeed(0.3);
-            const position = settings['setPosition'];
+            function easing(t) {
+                return t * (2 - t);
+            }
+            const position = settings['position'];
             map = new Map({
                 container: mapContainer,
-                style: {
-                    version: 8,
-                    sources: {
-                        'raster-tiles': {
-                            type: 'raster',
-                            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                            tileSize: 256,
-                            minzoom: 0,
-                            maxzoom: 18,
-                            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        }
-                    },
-                    layers: [
-                        {
-                            id: 'simple-tiles',
-                            type: 'raster',
-                            source: 'raster-tiles'
-                        }
-                    ]
-                },
+
+                style: 'https://api.maptiler.com/maps/streets/style.json?key=tEP4ZtWVB93CfqyCnbR0',
                 center: position,
-                zoom: 14
+                zoom: 14,
+                maxPitch: 85
             });
-            const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            iconSvg.setAttribute('viewBox', '-4 -4 40 40');
-            iconSvg.setAttribute('stroke', 'black');
-            const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            iconPath.setAttribute('d', 'M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4 14.6 16 8 22.6 9.4 24 16 17.4 22.6 24 24 22.6 17.4 16 24 9.4z');
-            iconSvg.appendChild(iconPath);
+            map.on('load', () => {
+                // map.addSource('raster-tiles', {
+                //     type: 'raster',
+                //     tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                //     tileSize: 256
+                // });
+                // map.addLayer({
+                //     id: 'simple-tiles',
+                //     type: 'raster',
+                //     source: 'raster-tiles',
+                //     layout: {
+                //         visibility: 'visible'
+                //     }
+                // });
+                directions = new MapLibreGlDirections(map, {
+                    requestOptions: {
+                        alternatives: 'true'
+                    }
+                });
+                // Optionally add the standard loading-indicator control
+                map.addControl(new LoadingIndicatorControl(directions));
+                setTerrainSource('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png');
+            });
+            // const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            // iconSvg.setAttribute('viewBox', '-4 -4 40 40');
+            // iconSvg.setAttribute('stroke', 'black');
+            // const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            // iconPath.setAttribute('d', 'M24 9.4L22.6 8 16 14.6 9.4 8 8 9.4 14.6 16 8 22.6 9.4 24 16 17.4 22.6 24 24 22.6 17.4 16 24 9.4z');
+            // iconSvg.appendChild(iconPath);
             const myCustomControl = new MapboxGLButtonControl({
+                className: 'maplibregl-ctrl-geolocate',
                 title: 'Fullscreen mode',
                 eventHandler: (event) => {
                     event.stopPropagation();
-                    setFullMap(!fullMap);
-                },
-                icon: iconSvg
+                    userLocationControl.centerOnLocation();
+                }
+                // icon: iconSvg
             });
 
-            map.addControl(myCustomControl);
-            map.addControl(
-                new NavigationControl({
-                    showCompass: false,
-                    showZoom: true
-                })
-            );
+            userLocationControl = new UserLocationControl({ trackUserLocation: true });
+            map.addControl(userLocationControl);
             map.on('click', function (e) {
-                // The event object (e) contains information like the
-                // coordinates of the point on the map that was clicked.
-                if (fullMap) {
-                    webapp && webapp.setPosition({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+                if (shouldMoveOnClick && !directionsMode) {
+                    setPosition({ lat: e.lngLat.lat, lon: e.lngLat.lng });
                 }
             });
-            mapPositionMarker = new Marker().setLngLat(position).addTo(map);
+
+            setPosition(position);
+
+            map.addControl(
+                new NavigationControl({
+                    visualizePitch: true,
+                    showZoom: true,
+                    showCompass: true
+                })
+            );
+
+            map.addControl(
+                new TerrainControl({
+                    source: 'terrainSource',
+                    exaggeration: 1
+                })
+            );
+            map.addControl(myCustomControl);
+
+            map.addControl(new RulerControl({}), 'top-right');
+
+            map.on('ruler.on', () => (shouldMoveOnClick = false));
+            map.on('ruler.off', () => (shouldMoveOnClick = true));
         } catch (error) {
             console.error(error);
         }
     });
+    function bearingDistance({ lat, lon }, radius, bearing) {
+        const lat1Rads = toRad(lat);
+        const lon1Rads = toRad(lon);
+        const R_M = 6371000; // radius in M
+        const d = radius / R_M; //angular distance on earth's surface
 
+        const bearingRads = toRad(bearing);
+        const lat2Rads = Math.asin(Math.sin(lat1Rads) * Math.cos(d) + Math.cos(lat1Rads) * Math.sin(d) * Math.cos(bearingRads));
+
+        const lon2Rads = lon1Rads + Math.atan2(Math.sin(bearingRads) * Math.sin(d) * Math.cos(lat1Rads), Math.cos(d) - Math.sin(lat1Rads) * Math.sin(lat2Rads));
+
+        return {
+            lat: toDeg(lat2Rads),
+            lon: toDeg(lon2Rads)
+        };
+    }
+
+    function toRad(degrees) {
+        return (degrees * Math.PI) / 180;
+    }
+
+    function toDeg(radians) {
+        return (radians * 180) / Math.PI;
+    }
+
+    const KEYCODE = {
+        W: 87,
+        A: 65,
+        S: 83,
+        D: 68,
+        Q: 81,
+        E: 69,
+        ARROW_LEFT: 37,
+        ARROW_UP: 38,
+        ARROW_RIGHT: 39,
+        ARROW_DOWN: 40
+    };
+    const keyRepeatSpeedMs = 16.6;
+    const wKey = new KeyboardKeyHold(KEYCODE.W, keyRepeatSpeedMs);
+    const aKey = new KeyboardKeyHold(KEYCODE.A, keyRepeatSpeedMs);
+    const sKey = new KeyboardKeyHold(KEYCODE.S, keyRepeatSpeedMs);
+    const dKey = new KeyboardKeyHold(KEYCODE.D, keyRepeatSpeedMs);
+
+    let slowDecaleMeters = 1;
+    let fastDecaleMeters = 10;
+
+    function setSpeed(speedInKmh) {
+        slowDecaleMeters = (speedInKmh / 3600) * keyRepeatSpeedMs;
+        fastDecaleMeters = slowDecaleMeters * 10;
+    }
+    $: setSpeed($store.speedInKm);
+
+    function handleHolding(bearingDelta) {
+        return function (event) {
+            let bearing = map.getBearing() + bearingDelta;
+            const delta = event.originalEvent.shiftKey ? fastDecaleMeters : slowDecaleMeters;
+            setPosition(bearingDistance(userLocationControl.currentPosition, delta, bearing));
+        };
+    }
+    aKey.addEventListener('holding', handleHolding(270));
+    dKey.addEventListener('holding', handleHolding(90));
+    wKey.addEventListener('holding', handleHolding(0));
+    sKey.addEventListener('holding', handleHolding(180));
+
+    let directionsMode = false;
+    addEventListener(
+        'keydown',
+        (event) => {
+                    console.log('keydown', event);
+            if (event.key !== 'Tab') {
+                const ele = event.composedPath()[0];
+                const isInput = ele instanceof HTMLInputElement || ele instanceof HTMLTextAreaElement;
+                if (!ele || !isInput || event.key === 'Escape') {
+                    event.preventDefault();
+                }
+            }
+            if (event.key === 'Control') {
+                directionsMode = directions.interactive = true;
+            }
+        }
+        //     { capture: true }
+    );
+    addEventListener(
+        'keyup',
+        (event) => {
+            if (event.key === 'Control') {
+                directionsMode = directions.interactive = false;
+            }
+        }
+        //     { capture: true }
+    );
     async function spawn(cmd, args, cwd?) {
         const command = new Command(cmd, args, { cwd: cwd });
         command.on('error', (error) => console.error(`command error: "${error}"`));
@@ -227,29 +375,66 @@
             await spawn(array[0], array.slice(1));
         }
     }
-    async function sendPositionToEmulators(position) {
-        sendPositionToIOSSimulators(position);
-        sendPositionToAndroidEmulators(position);
+
+    const saveCurrentPosition = throttle((position) => {
+        $store.position = position;
+    }, 3000);
+    async function setPosition(position, forceCenter = false) {
+        if (!position) {
+            return;
+        }
+        userLocationControl.updatePosition(position, forceCenter);
+        if (settings.iosSimulatorsSupported && settings.iosSimulators) {
+            sendPositionToIOSSimulators(position);
+        }
+        if (settings.iosDevices) {
+            sendPositionToIOSDevices(position);
+        }
+        if (settings.androidEmulators) {
+            sendPositionToAndroidEmulators(position);
+        }
+        saveCurrentPosition(position);
     }
-    async function sendPositionToIOSSimulators(position) {
-        let result = await exec('xcrun', ['simctl', 'list', '-j', 'devices']);
-        const data = JSON.parse(result);
-        const devices = Object.values<any[]>(data.devices)
-            .flat()
-            .filter((d) => d.state === 'Booted')
-            .map((v) => v.udid);
-        return invoke('send_location_to_simulators', { ...position, devices });
+
+    let simDevices = [];
+    let lastSimDevicesCall;
+    async function detectSimDevices() {
+        let now = Date.now();
+        if (!lastSimDevicesCall || now - lastSimDevicesCall >= 5000) {
+            lastSimDevicesCall = now;
+            let result = await exec('xcrun', ['simctl', 'list', '-j', 'devices']);
+            const data = JSON.parse(result);
+            simDevices = Object.values<any[]>(data.devices)
+                .flat()
+                .filter((d) => d.state === 'Booted')
+                .map((v) => v.udid);
+        }
+        return simDevices;
     }
-    async function sendPositionToAndroidEmulators(position) {
-        mapPositionMarker && mapPositionMarker.setLngLat(position);
-        map && map.setCenter(position);
+    const sendPositionToIOSSimulators = throttle(async (position) => {
+        try {
+            const devices = await detectSimDevices();
+            await invoke('send_location_to_simulators', { ...position, devices });
+        } catch (error) {
+            console.error(error);
+        }
+    }, 300);
+    const sendPositionToIOSDevices = throttle(async (position) => {
+        try {
+            await invoke('send_location_to_devices', { ...position });
+        } catch (error) {
+            console.error(error);
+        }
+    }, 300);
+    const sendPositionToAndroidEmulators = throttle(async (position) => {
+        userLocationControl.updatePosition(position);
         const args = ['shell', 'am', 'startservice', '-e', 'longitude', position.lon + '', '-e', 'latitude', position.lat + '', 'io.appium.settings/.LocationService'];
         try {
             await spawn('adb', args);
         } catch (error) {
             console.error(error);
         }
-    }
+    }, 200);
     listen<string>('tauri://menu', ({ payload }) => {
         // console.log('on menu', payload);
         switch (payload) {
@@ -285,7 +470,6 @@
     }
     const searchText = debounce(actualSearchText, 500);
 
-    $: lowerCaseValue = value.toLowerCase();
     $: searchText(value);
 
     $: onSelectedAddress(selectedResultIndex);
@@ -299,10 +483,13 @@
         const selectedAddress = results[index].data;
         const geometry = selectedAddress.geometry;
         if (geometry.type === 'Point') {
-            webapp?.setPosition({
-                lat: geometry.coordinates[1],
-                lon: geometry.coordinates[0]
-            });
+            setPosition(
+                {
+                    lat: geometry.coordinates[1],
+                    lon: geometry.coordinates[0]
+                },
+                true
+            );
         }
     }
 </script>
@@ -321,67 +508,19 @@
 
                     <TextInput bind:value={$store.localURL} label={$_('localhost_url')} autocomplete="off" spellcheck="false" autocorrect="off" helperText="Host URL for local data (tileserver-gl)" />
                     <HeaderPanelDivider />
-                    <Checkbox bind:checked={$store.mapMap} labelText={$_('map_mode')} />
-                    <Checkbox bind:checked={$store.dark} labelText={$_('dark_mode')} />
-                    <Checkbox bind:checked={$store.outline} labelText={$_('map_outline')} />
+                    <Checkbox bind:checked={$store.androidEmulators} labelText={$_('android_emulators')} />
+                    <Checkbox bind:checked={$store.iosDevices} labelText={$_('ios_devices')} />
+                    {#if $store.iosSimulatorsSupported}
+                        <Checkbox bind:checked={$store.iosSimulators} labelText={$_('ios_simulators')} />
+                    {/if}
                     <HeaderPanelDivider />
-                    <Slider bind:value={$store.far} min={0} max={400000} step={1} labelText={$_('viewing_distance')} maxLabel="400km" hideTextInput />
-                    <Slider bind:value={$store.exageration} min={0} max={4} step={0.01} labelText={$_('exageration')} hideTextInput />
-                    <Slider bind:value={$store.outlineStroke} min={0} max={10} step={0.01} labelText={$_('outline_stroke_width')} hideTextInput />
-                    <Slider bind:value={$store.elevation} min={0} max={9000} labelText={$_('elevation')} maxLabel="9000m" hideTextInput />
-                    <!-- <SliderComponent title="Time of Day" min="0" max="86400" step="1" bind:value={$store.secondsInDay} labelId="secondsInDayLabel" /> -->
+                    <Slider hideTextInput bind:value={$store.speedInKm} min={1} max={600} step={1} labelText={$_('speed') + '(km/h)'} />
                 </div>
             </HeaderAction>
         </HeaderUtilities>
     </Header>
 
     <Content id="app-content">
-        <video id="video" autoplay playsinline>
-            <track kind="captions" />
-        </video>
-        <canvas id="canvas" style="background-color: transparent; position: absolute; top: 0px; left: 0px; width: 100%; height: 100%" />
-        <canvas id="canvas4" style="position: absolute; pointer-events: none; top: 0px; left: 0px; width: 100%; height: 100%" />
-
-        <div
-            style="width:100%;height:100%;display:flex; pointer-events:none;"
-            on:click={() => {
-                if (!fullMap) {
-                    setFullMap(true);
-                }
-            }}
-        >
-            <div
-                style:pointer-events="auto"
-                class="map"
-                id="map"
-                bind:this={mapContainer}
-                style:width={fullMap ? '100%' : '24%'}
-                style:height={fullMap ? '100%' : '24%'}
-                style="align-self:flex-end;margin: 0px;"
-            />
-        </div>
-
-        <div id="compass" on:click={() => webapp?.setAzimuth(0)}>
-            <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-                <path d="m192.265625 8.027344c-89.882813 23.144531-161.09375 94.351562-184.238281 184.234375l29.0625 7.472656c20.40625-79.292969 83.355468-142.242187 162.644531-162.644531zm0 0" />
-                <path
-                    d="m474.910156 199.734375 29.0625-7.472656c-23.144531-89.882813-94.355468-161.089844-184.238281-184.234375l-7.46875 29.0625c79.292969 20.402344 142.238281 83.351562 162.644531 162.644531zm0 0"
-                />
-                <path d="m319.734375 503.957031c89.882813-23.132812 161.09375-94.324219 184.238281-184.222656l-29.0625-7.472656c-20.40625 79.308593-83.355468 142.242187-162.648437 162.632812zm0 0" />
-                <path
-                    d="m37.089844 312.261719-29.0625 7.472656c23.144531 89.898437 94.355468 161.09375 184.238281 184.222656l7.46875-29.0625c-79.292969-20.390625-142.238281-83.324219-162.644531-162.632812zm0 0"
-                />
-                <path d="m256 210.996094c-24.8125 0-45 20.1875-45 45 0 24.816406 20.1875 45 45 45s45-20.183594 45-45c0-24.8125-20.1875-45-45-45zm15 60h-30v-30h30zm0 0" />
-                <path
-                    d="m256 0-57.613281 198.386719-198.386719 57.609375 198.386719 57.601562 57.613281 198.402344 57.613281-198.402344 198.386719-57.601562-198.386719-57.609375zm0 330.996094c-41.351562 0-75-33.644532-75-75 0-41.351563 33.648438-75 75-75s75 33.648437 75 75c0 41.355468-33.648438 75-75 75zm0 0"
-                />
-                <path d="m369.097656 183.339844 40.449219-80.886719-80.890625 40.4375 9.140625 31.3125zm0 0" />
-                <path d="m337.796875 337.796875-9.136719 31.304687 80.886719 40.441407-40.449219-80.882813zm0 0" />
-                <path d="m142.902344 328.660156-40.449219 80.882813 80.886719-40.445313-9.136719-31.300781zm0 0" />
-                <path d="m174.203125 174.203125 9.140625-31.3125-80.890625-40.4375 40.449219 80.886719zm0 0" />
-            </svg>
-            <div id="compass_slice" />
-        </div>
-        <label id="compass_label" />
+        <div style:pointer-events="auto" class="mapfull" id="map" bind:this={mapContainer} style="align-self:flex-end;margin: 0px;" />
     </Content>
 </div>

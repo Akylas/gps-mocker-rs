@@ -2,6 +2,8 @@
   "dark_mode": "Mode sombre",
   "elevation": "Élevage",
   "exageration": "Exagération",
+  "ios_devices": "iOS devices",
+  "ios_simulators": "iOS simulators",
   "local_data": "Données locales",
   "localhost_url": "URL de l'hôte local",
   "map_mode": "Mode carte",
