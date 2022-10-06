@@ -1,6 +1,6 @@
 [package]
 name = "gps_mocker"
-version = "2.0.0"
+version = "2.1.0"
 description = "Send Mocked GPS to Android/iOS devices"
 authors = [ "dev@akylasfr" ]
 license = "MIT"
@@ -10,20 +10,20 @@ edition = "2018"
 build = "src/build.rs"
 
 [build-dependencies]
-tauri-build = { version = "1.1.1", features = [] }
+tauri-build = { version = "1.1.1", features = [ ] }
 
 [dependencies]
 log = "0.4.15"
 byteorder = "1.4.3"
 serde_json = "1.0"
 serde = { version = "1.0", features = [ "derive" ] }
-tauri = { version = "1.1.1", features = ["os-all", "shell-execute", "shell-open"] }
+tauri = { version = "1.1.1", features = [ "os-all", "shell-execute", "shell-open" ] }
 tauri-plugin-window-state = "0.1"
 openssl = "0.10.42"
 
-[dependencies.rusty_libimobiledevice]
-features = ['static', 'vendored']
-git = "https://github.com/jkcoxson/rusty_libimobiledevice"
+  [dependencies.rusty_libimobiledevice]
+  features = [ "static", "vendored" ]
+  git = "https://github.com/jkcoxson/rusty_libimobiledevice"
 
 [features]
 default = [ "custom-protocol" ]
