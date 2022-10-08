@@ -98,7 +98,8 @@
         androidEmulators: true,
         iosSimulators: true,
         iosDevices: true,
-        speedInKm: 90
+        speedInKm: 90,
+        keyRepeatSpeedMs: 16.6
     };
     let settings = {
         ...(localStorage.getItem('settings') ? JSON.parse(localStorage.getItem('settings')) : DEFAULT_SETTINGS),
@@ -276,23 +277,29 @@
         ARROW_RIGHT: 39,
         ARROW_DOWN: 40
     };
-    const keyRepeatSpeedMs = 16.6;
-    const wKey = new KeyboardKeyHold(KEYCODE.W, keyRepeatSpeedMs);
-    const aKey = new KeyboardKeyHold(KEYCODE.A, keyRepeatSpeedMs);
-    const sKey = new KeyboardKeyHold(KEYCODE.S, keyRepeatSpeedMs);
-    const dKey = new KeyboardKeyHold(KEYCODE.D, keyRepeatSpeedMs);
+    const wKey = new KeyboardKeyHold(KEYCODE.W, $store.keyRepeatSpeedMs);
+    const aKey = new KeyboardKeyHold(KEYCODE.A, $store.keyRepeatSpeedMs);
+    const sKey = new KeyboardKeyHold(KEYCODE.S, $store.keyRepeatSpeedMs);
+    const dKey = new KeyboardKeyHold(KEYCODE.D, $store.keyRepeatSpeedMs);
 
     let slowDecaleMeters = 1;
     let fastDecaleMeters = 10;
 
-    function setSpeed(speedInKmh) {
-        slowDecaleMeters = (speedInKmh / 3600) * keyRepeatSpeedMs;
+    function setSpeed(_speedInKmh, _keyRepeatSpeedMs) {
+        slowDecaleMeters = (_speedInKmh / 3600) * _keyRepeatSpeedMs;
         fastDecaleMeters = slowDecaleMeters * 10;
     }
-    $: setSpeed($store.speedInKm);
+    $: setSpeed($store.speedInKm, $store.keyRepeatSpeedMs);
+    $:{
+        wKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
+        aKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
+        sKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
+        dKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
+    }
 
     function handleHolding(bearingDelta) {
         return function (event) {
+            console.log('handleHolding', bearingDelta, slowDecaleMeters, fastDecaleMeters, $store.keyRepeatSpeedMs, )
             let bearing = map.getBearing() + bearingDelta;
             const delta = event.originalEvent.shiftKey ? fastDecaleMeters : slowDecaleMeters;
             setPosition(bearingDistance(userLocationControl.currentPosition, delta, bearing));
@@ -307,7 +314,7 @@
     addEventListener(
         'keydown',
         (event) => {
-                    console.log('keydown', event);
+            console.log('keydown', event);
             if (event.key !== 'Tab') {
                 const ele = event.composedPath()[0];
                 const isInput = ele instanceof HTMLInputElement || ele instanceof HTMLTextAreaElement;
@@ -514,7 +521,8 @@
                         <Checkbox bind:checked={$store.iosSimulators} labelText={$_('ios_simulators')} />
                     {/if}
                     <HeaderPanelDivider />
-                    <Slider hideTextInput bind:value={$store.speedInKm} min={1} max={600} step={1} labelText={$_('speed') + '(km/h)'} />
+                    <Slider hideTextInput bind:value={$store.speedInKm} min={1} max={600} step={1} labelText={`${$_('speed')}:${$store.speedInKm} km/h`} />
+                    <Slider hideTextInput bind:value={$store.keyRepeatSpeedMs} min={10} max={5000} step={1} labelText={`${$_('keyRepeatSpeedMs')}:${$store.keyRepeatSpeedMs} ms`} />
                 </div>
             </HeaderAction>
         </HeaderUtilities>
