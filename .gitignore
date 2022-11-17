@@ -7,3 +7,4 @@ src-tauri/WixTools
 package-lock.json
 /.vscode/settings.json
 /pnpm-global
+/pnpm-lock.yaml
