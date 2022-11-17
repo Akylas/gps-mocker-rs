@@ -4,11 +4,13 @@
   "exageration": "Exagération",
   "ios_devices": "iOS devices",
   "ios_simulators": "iOS simulators",
-  "local_data": "Données locales",
+  "local_data": "Activer l'URL de données de terrain",
   "localhost_url": "URL de l'hôte local",
   "map_mode": "Mode carte",
   "map_outline": "Esquisse de la carte",
+  "mapstyle_url": "URL des données de carte",
   "outline_stroke_width": "Largeur ligne d'esquisse",
   "search_location": "Lieu de recherche",
+  "terrain_data_url": "URL pour les données de terrain",
   "viewing_distance": "Distance de vue"
 }

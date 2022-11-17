@@ -4,7 +4,7 @@
     import { invoke, os } from '@tauri-apps/api';
     import { listen } from '@tauri-apps/api/event';
     import { Command, open } from '@tauri-apps/api/shell';
-    import { Checkbox, Content, Header, HeaderAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput } from 'carbon-components-svelte';
+    import { Checkbox, Content, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput } from 'carbon-components-svelte';
     import { KeyboardKeyHold } from 'hold-event';
     import { RulerControl } from 'mapbox-gl-controls';
     import { Map, NavigationControl, TerrainControl } from 'maplibre-gl';
@@ -14,6 +14,7 @@
     import { writable } from 'svelte/store';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
     import UserLocationControl from './UserLocationControl';
+    import LocationFilled from 'carbon-icons-svelte/lib/LocationFilled.svelte';
     let userLocationControl: UserLocationControl;
     let osType;
     async function getOs() {
@@ -99,12 +100,17 @@
         iosSimulators: true,
         iosDevices: true,
         speedInKm: 90,
-        keyRepeatSpeedMs: 16.6
+        keyRepeatSpeedMs: 16.6,
+        mapStyle: 'https://api.maptiler.com/maps/streets/style.json?key=tEP4ZtWVB93CfqyCnbR0',
+        terrainDataUrl: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+        terrainDataTerrarium: true,
+        mockEnabled: false
     };
     let settings = {
-        ...(localStorage.getItem('settings') ? JSON.parse(localStorage.getItem('settings')) : DEFAULT_SETTINGS),
+        ...(localStorage.getItem('settings') ? {...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('settings'))} : DEFAULT_SETTINGS),
         iosSimulatorsSupported: false
     };
+    console.log('settings', settings)
     if (!settings.hasOwnProperty('position')) {
         settings = DEFAULT_SETTINGS;
     }
@@ -118,20 +124,33 @@
     });
     let map: Map;
     let mapContainer;
-
-    function setTerrainSource(url) {
-        if (!map.loaded) {
-            map.once('load', () => setTerrainSource(url));
+    let terrainControlAdded = false;
+    async function setTerrainSource(url, terrarium: boolean) {
+        console.log('setTerrainSource', url, new Error().stack);
+        if (!map || !url) {
             return;
         }
+        let maxzoom;
+        if (url.endsWith('.json')) {
+            const jsonData = await fetch(url).then((data) => data.json());
+            url = jsonData.tiles[0];
+            maxzoom = jsonData.maxzoom;
+            console.log('jsonData', maxzoom, url, jsonData);
+        }
+        if (!map.loaded) {
+            map.once('load', () => setTerrainSource(url, terrarium));
+            return;
+        }
+        console.log('setTerrainSource', url, terrarium);
         try {
             map.removeSource('terrainSource');
         } catch (err) {}
         try {
             map.addSource('terrainSource', {
                 type: 'raster-dem',
-                encoding: 'terrarium',
+                encoding: terrarium ? 'terrarium' : 'mapbox',
                 tiles: [url],
+                maxzoom,
                 tileSize: 256
             });
             // try {
@@ -147,6 +166,15 @@
             //         'hillshade-exaggeration': 0.2,
             //     }
             // });
+            if (!terrainControlAdded) {
+                terrainControlAdded = true;
+                map.addControl(
+                    new TerrainControl({
+                        source: 'terrainSource',
+                        exaggeration: 1
+                    })
+                );
+            }
         } catch (err) {
             console.error(err);
         }
@@ -162,7 +190,7 @@
             map = new Map({
                 container: mapContainer,
 
-                style: 'https://api.maptiler.com/maps/streets/style.json?key=tEP4ZtWVB93CfqyCnbR0',
+                style: $store.customMapStyleUrl && $store.customMapStyle ? $store.customMapStyleUrl : $store.mapStyle,
                 center: position,
                 zoom: 14,
                 maxPitch: 85
@@ -188,7 +216,11 @@
                 });
                 // Optionally add the standard loading-indicator control
                 map.addControl(new LoadingIndicatorControl(directions));
-                setTerrainSource('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png');
+                if ($store.customTerrainDataUrl && $store.customTerrainData) {
+                    setTerrainSource($store.customTerrainDataUrl, $store.terrainDataTerrarium);
+                } else {
+                    setTerrainSource($store.terrainDataUrl, $store.terrainDataTerrarium);
+                }
             });
             // const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             // iconSvg.setAttribute('viewBox', '-4 -4 40 40');
@@ -224,12 +256,6 @@
                 })
             );
 
-            map.addControl(
-                new TerrainControl({
-                    source: 'terrainSource',
-                    exaggeration: 1
-                })
-            );
             map.addControl(myCustomControl);
 
             map.addControl(new RulerControl({}), 'top-right');
@@ -240,6 +266,23 @@
             console.error(error);
         }
     });
+
+    $: {
+        if ($store.customTerrainDataUrl && $store.customTerrainData) {
+            setTerrainSource($store.customTerrainDataUrl, $store.terrainDataTerrarium);
+        } else {
+            setTerrainSource($store.terrainDataUrl, $store.terrainDataTerrarium);
+        }
+    }
+    $: {
+        if (map) {
+            if ($store.customMapStyleUrl && $store.customMapStyle) {
+                map.setStyle($store.customMapStyleUrl);
+            } else {
+                map.setStyle($store.mapStyle);
+            }
+        }
+    }
     function bearingDistance({ lat, lon }, radius, bearing) {
         const lat1Rads = toRad(lat);
         const lon1Rads = toRad(lon);
@@ -290,7 +333,7 @@
         fastDecaleMeters = slowDecaleMeters * 10;
     }
     $: setSpeed($store.speedInKm, $store.keyRepeatSpeedMs);
-    $:{
+    $: {
         wKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
         aKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
         sKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
@@ -299,7 +342,7 @@
 
     function handleHolding(bearingDelta) {
         return function (event) {
-            console.log('handleHolding', bearingDelta, slowDecaleMeters, fastDecaleMeters, $store.keyRepeatSpeedMs, )
+            console.log('handleHolding', bearingDelta, slowDecaleMeters, fastDecaleMeters, $store.keyRepeatSpeedMs);
             let bearing = map.getBearing() + bearingDelta;
             const delta = event.originalEvent.shiftKey ? fastDecaleMeters : slowDecaleMeters;
             setPosition(bearingDistance(userLocationControl.currentPosition, delta, bearing));
@@ -383,11 +426,22 @@
         }
     }
 
-    const saveCurrentPosition = throttle((position) => {
-        $store.position = position;
+    const saveCurrentMockPosition = throttle((position) => {
+        $store.osition = position;
     }, 3000);
     async function setPosition(position, forceCenter = false) {
         if (!position) {
+            return;
+        }
+        if (!$store.mockEnabled) {
+            if (forceCenter) {
+                map.flyTo({
+                    center: [position.lon, position.lat],
+                    zoom: 18,
+                    maxDuration: 500,
+                    essential: true // this animation is considered essential with respect to prefers-reduced-motion
+                });
+            }
             return;
         }
         userLocationControl.updatePosition(position, forceCenter);
@@ -400,7 +454,7 @@
         if (settings.androidEmulators) {
             sendPositionToAndroidEmulators(position);
         }
-        saveCurrentPosition(position);
+        saveCurrentMockPosition(position);
     }
 
     let simDevices = [];
@@ -508,13 +562,35 @@
         </svelte:fragment>
         <HeaderUtilities>
             <HeaderSearch id="search-btn" bind:active bind:value bind:selectedResultIndex placeholder={$_('search_location')} {results} />
+            {#if $store.mockEnabled}
+                <HeaderGlobalAction aria-label="Mock" icon={LocationFilled} on:click={() => ($store.mockEnabled = false)} />
+            {/if}
             <HeaderAction bind:isOpen={drawerOpened}>
                 <div class="drawer-content">
                     <h3>Settings</h3>
-                    <Checkbox bind:checked={$store.local} labelText={$_('local_data')} disabled={!$store.localURL || $store.localURL.length === 0} />
 
-                    <TextInput bind:value={$store.localURL} label={$_('localhost_url')} autocomplete="off" spellcheck="false" autocorrect="off" helperText="Host URL for local data (tileserver-gl)" />
+                    <Checkbox bind:checked={$store.customMapStyle} labelText={$_('local_data')} disabled={!$store.customMapStyleUrl || $store.customMapStyleUrl.length === 0} />
+                    <TextInput
+                        bind:value={$store.customMapStyleUrl}
+                        label={$_('mapstyle_url')}
+                        autocomplete="off"
+                        spellcheck="false"
+                        autocorrect="off"
+                        helperText="Host URL for local data (tileserver-gl)"
+                    />
+
+                    <Checkbox bind:checked={$store.terrainDataTerrarium} labelText={$_('terrain_terrarium')} />
+                    <Checkbox bind:checked={$store.customTerrainData} labelText={$_('local_data')} disabled={!$store.customTerrainDataUrl || $store.customTerrainDataUrl.length === 0} />
+                    <TextInput
+                        bind:value={$store.customTerrainDataUrl}
+                        label={$_('terrain_data_url')}
+                        autocomplete="off"
+                        spellcheck="false"
+                        autocorrect="off"
+                        helperText="Host URL for custom terrain data (tileserver-gl)"
+                    />
                     <HeaderPanelDivider />
+                    <Checkbox bind:checked={$store.mockEnabled} labelText={$_('mock_enabled')} />
                     <Checkbox bind:checked={$store.androidEmulators} labelText={$_('android_emulators')} />
                     <Checkbox bind:checked={$store.iosDevices} labelText={$_('ios_devices')} />
                     {#if $store.iosSimulatorsSupported}
