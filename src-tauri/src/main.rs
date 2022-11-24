@@ -3,13 +3,14 @@
   windows_subsystem = "windows"
 )]
 use byteorder::{BigEndian, ByteOrder};
-use rusty_libimobiledevice::idevice;
-use rusty_libimobiledevice::service;
 use std::process::Command;
 use tauri::{
   AboutMetadata, CustomMenuItem, Menu, MenuEntry, MenuItem, Submenu, WindowBuilder, WindowUrl,
 };
 
+
+#[cfg(target_os = "macos")]
+use rusty_libimobiledevice::{idevice, service};
 #[cfg(target_os = "macos")]
 use cocoa::{
   base::{nil, YES},
@@ -49,6 +50,8 @@ fn send_location_to_simulators(lat: f32, lon: f32, devices: Vec<String>) {
 }
 #[tauri::command]
 fn send_location_to_devices(lat: f32, lon: f32) {
+  #[cfg(target_os = "macos")]
+  unsafe {
   let lat_str = lat.to_string();
   let lon_str = lon.to_string();
   let start_msg = 0 as i8;
@@ -136,6 +139,7 @@ fn send_location_to_devices(lat: f32, lon: f32) {
       }
     };
   }
+}
 }
 
 // the payload type must implement `Serialize`.
