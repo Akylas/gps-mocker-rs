@@ -9,6 +9,7 @@ use std::process::Command;
 use tauri::{
   AboutMetadata, CustomMenuItem, Menu, MenuEntry, MenuItem, Submenu, WindowBuilder, WindowUrl,
 };
+use std::str;
 
 #[cfg(target_os = "macos")]
 use cocoa::{
@@ -145,15 +146,19 @@ struct Payload {
 }
 
 #[tauri::command]
-fn install_apk() -> Result<bool, String> {
-  let output = Command::new("adb")
-    .args(&["install", "../resources/settings_apk-debug.apk"])
+fn install_apk(handle: tauri::AppHandle) -> Result<bool, String> {
+  let resource_path = handle.path_resolver()
+      .resolve_resource("../resources/settings_apk-debug.apk")
+      .expect("failed to resolve resource settings_apk-debug.apk");
+    let output = Command::new("adb")
+    .args(&["install", &(resource_path.into_os_string().into_string().unwrap())])
     .output()
     .expect("Failed to install APK");
 
   if output.status.success() {
     Ok(true)
   } else {
+    println!("error installing apk {:?}", str::from_utf8(&output.stderr) );
     Ok(false)
   }
 }
