@@ -110,7 +110,6 @@
         ...(localStorage.getItem('settings') ? {...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('settings'))} : DEFAULT_SETTINGS),
         iosSimulatorsSupported: false
     };
-    console.log('settings', settings)
     if (!settings.hasOwnProperty('position')) {
         settings = DEFAULT_SETTINGS;
     }
@@ -126,7 +125,7 @@
     let mapContainer;
     let terrainControlAdded = false;
     async function setTerrainSource(url, terrarium: boolean) {
-        console.log('setTerrainSource', url, new Error().stack);
+        // console.log('setTerrainSource', url, new Error().stack);
         if (!map || !url) {
             return;
         }
@@ -135,13 +134,13 @@
             const jsonData = await fetch(url).then((data) => data.json());
             url = jsonData.tiles[0];
             maxzoom = jsonData.maxzoom;
-            console.log('jsonData', maxzoom, url, jsonData);
+            // console.log('jsonData', maxzoom, url, jsonData);
         }
         if (!map.loaded) {
             map.once('load', () => setTerrainSource(url, terrarium));
             return;
         }
-        console.log('setTerrainSource', url, terrarium);
+        // console.log('setTerrainSource', url, terrarium);
         try {
             map.removeSource('terrainSource');
         } catch (err) {}
@@ -342,7 +341,6 @@
 
     function handleHolding(bearingDelta) {
         return function (event) {
-            console.log('handleHolding', bearingDelta, slowDecaleMeters, fastDecaleMeters, $store.keyRepeatSpeedMs);
             let bearing = map.getBearing() + bearingDelta;
             const delta = event.originalEvent.shiftKey ? fastDecaleMeters : slowDecaleMeters;
             setPosition(bearingDistance(userLocationControl.currentPosition, delta, bearing));
@@ -357,7 +355,6 @@
     addEventListener(
         'keydown',
         (event) => {
-            console.log('keydown', event);
             if (event.key !== 'Tab') {
                 const ele = event.composedPath()[0];
                 const isInput = ele instanceof HTMLInputElement || ele instanceof HTMLTextAreaElement;
