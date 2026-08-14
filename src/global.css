@@ -1,213 +1,68 @@
+/*
+ * Overrides for things rendered outside the Svelte tree: maplibre's own
+ * controls, and the ruler plugin's button. Everything else lives in theme.css
+ * or in a component.
+ *
+ * Every selector here is qualified with `.maplibregl-map`. This file is a
+ * <link> in the document head, while maplibre's own stylesheet arrives later as
+ * a JS-injected <style>, so a bare class selector would lose the cascade.
+ */
 
+html,
 body {
-  margin: 0;
-  width: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: fixed;
-}
-video {
-  object-fit: cover;
-  position: absolute;
-  min-width: 100%;
-  min-height: 100%;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-.drawer-container {
-  position: absolute;
-  display:contents;
-  min-width: 100%;
-  min-height: 100%;
-}
-.drawer-content {
-  padding: 10px;
-}
-.ui-container {
-  z-index: 1;
-  height: 100%;
-  width: 100%;
-  position: absolute;
-}
-.drawer {
-  z-index: 2;
-}
-.map {
-  border: solid 2px black;
-  height: 20%;
-  width: 20%;
-}
-.mapfull {
-  height: 100%;
-  width: 100%;
-}
-#app-content {
-  display:flex;
-  height: 100%;
-  width: 100%;
-  /* position: absolute; */
-  padding-bottom:5rem;
-  /* background: linear-gradient(180deg, rgba(161, 216, 232, 1) 0%, rgba(236, 236, 236, 1) 100%); */
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
 }
 
-.autocomplete {
-  width: 30%;
-  pointer-events: auto;
-  align-self: flex-start;
-  justify-self: true;
-  flex-shrink: 1;
-}
-
-#map_button,
-#settings_button,
-#camera_button {
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  outline: 0;
-  border: 0;
-  border-radius: 38px;
-  background-color: transparent;
-  cursor: pointer;
-  width: 74px;
-  height: 74px;
-  flex-shrink: 0;
-  mix-blend-mode: difference;
-}
-
-#map_button,
-#settings_button,
-#camera_button svg {
-  /* filter: grayscale(100%) invert(100%); */
-  mix-blend-mode: difference;
-  fill: #888;
-  transform: scale(1.5);
-}
-#settings_button {
-  right: 0px;
-  bottom: 0px;
-}
-
-#camera_button {
-  left: 0px;
-  bottom: 40px;
-}
-
-#map_button {
-  left: 0px;
-  bottom: 0px;
-}
-
-#compass {
-  position: absolute;
-  background: none;
-  border: none;
-  top: 3rem;
-  left: 0px;
-  opacity: 0.9;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  margin: 10px;
-}
-#compass_label {
-  position: absolute;
-  top: calc(3rem + 70px);
-  left: 20px;
-  opacity: 0.9;
-}
-#compass svg {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  fill: #888;
-}
-#compass_slice {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  position: absolute;
-}
-
-#elevation {
-  position: absolute;
-  top: 40%;
-  left: -13vh;
-  width: 30vh;
-  overflow: hidden;
-  transform: rotate(270deg);
-}
-#selectedPeakHolder {
-  pointer-events: none;
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: end;
-  flex-direction: row;
-  justify-content: center;
-}
-#selectedPeak {
-  pointer-events: all;
-  margin-bottom: 40px;
-  border-radius: 30px;
-  max-width: 70%;
-  padding: 6px;
-  background: #4465be94;
-  color: white;
-  display: flex;
-  align-items: center;
-  visibility: hidden;
-}
-
-#gotopeak_button {
-  border: none;
-  background-color: transparent;
-  cursor: pointer;
-}
-#selectedPeakLabel {
-  font: bold 16 Noto Sans;
-  padding: 2px 10px 2px 10px;
-  color: white;
-}
-#gotopeak_button svg {
-  color: white;
-  margin-right: 10px;
-}
-
+/* the ruler plugin ships a light-only inline SVG for its close button */
 .mapboxgl-ctrl-close {
-  background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCI+ICAgIDx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkeT0iLjM1ZW0iIHN0eWxlPSJmb250LXNpemU6IDE0cHg7IGZvbnQtZmFtaWx5OiAnSGVsdmV0aWNhIE5ldWUnLEFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmOyBmb250LXdlaWdodDogYm9sZDsgdGV4dC1hbmNob3I6IG1pZGRsZTsiPjJEPC90ZXh0Pjwvc3ZnPg==);
+    background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCI+ICAgIDx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkeT0iLjM1ZW0iIHN0eWxlPSJmb250LXNpemU6IDE0cHg7IGZvbnQtZmFtaWx5OiAnSGVsdmV0aWNhIE5ldWUnLEFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmOyBmb250LXdlaWdodDogYm9sZDsgdGV4dC1hbmNob3I6IG1pZGRsZTsiPjJEPC90ZXh0Pjwvc3ZnPg==);
 }
 
-.bx--header-panel--expanded {
-  background-color:#000000dd !important;
-  /* the settings list is far taller than the panel's own height rule allows */
-  height: calc(100vh - 3rem) !important;
-  overflow-y: auto !important;
-  width: 21rem !important;
+/* maplibre defaults to a white card, which reads as a hole in a dark shell */
+.maplibregl-map .maplibregl-ctrl-group,
+.maplibregl-map .mapboxgl-ctrl-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
 }
-.drawer-content {
-  padding: 12px 16px 40px;
+.maplibregl-map .maplibregl-ctrl-group button,
+.maplibregl-map .mapboxgl-ctrl-group button {
+    width: var(--tap);
+    height: var(--tap);
+    background: transparent;
 }
-.bx--header {
-  background-color:#000000aa !important;
+.maplibregl-map .maplibregl-ctrl-group button + button,
+.maplibregl-map .mapboxgl-ctrl-group button + button {
+    border-top: 1px solid var(--border);
+}
+/* maplibre's control icons are black PNG-ish SVGs; only dark needs them flipped */
+:root[data-theme='dark'] .maplibregl-map .maplibregl-ctrl-group button span,
+:root[data-theme='dark'] .maplibregl-map .mapboxgl-ctrl-group button span {
+    filter: invert(1);
 }
 
-.bx--header__global :nth-child(1) {
-  background-color:transparent !important;
+.maplibregl-map .maplibregl-ctrl-attrib,
+.maplibregl-map .mapboxgl-ctrl-attrib {
+    background: var(--surface);
+    color: var(--text-muted);
+}
+.maplibregl-map .maplibregl-ctrl-attrib a,
+.maplibregl-map .mapboxgl-ctrl-attrib a {
+    color: var(--accent-text);
 }
 
-#app-content {
-  padding: 0px !important;
-}
-/* Carbon leaves the modal's full-screen backdrop in the DOM after it closes.
-   Our build renders it at opacity 0 but still visible and hit-testable at
-   z-index 9000, so once Saved Routes had been opened, every later click
-   anywhere in the app landed on the invisible backdrop instead. */
-.bx--modal:not(.is-visible) {
-  visibility: hidden;
-  pointer-events: none;
+/*
+ * The touch shell has its own map buttons in the thumb-reachable column, so
+ * maplibre's stack would only be a second, smaller copy of them. The
+ * attribution stays: it is not ours to hide.
+ */
+@media (max-width: 839px) {
+    .maplibregl-map .maplibregl-ctrl-group,
+    .maplibregl-map .mapboxgl-ctrl-group {
+        display: none;
+    }
 }

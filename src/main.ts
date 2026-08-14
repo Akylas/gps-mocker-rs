@@ -1,7 +1,5 @@
 import { addMessages, getLocaleFromNavigator, init } from 'svelte-i18n';
-import './carbon.css';
-// import "carbon-components-svelte/css/all.css";
-
+import './theme.css';
 
 import App from './components/App.svelte';
 import en from './i18n/en.json';

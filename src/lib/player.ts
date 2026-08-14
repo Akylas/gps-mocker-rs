@@ -90,7 +90,7 @@ interface Detour {
  * Per-segment speeds recovered from a recording's timestamps. Segments with
  * implausible speeds (a paused recorder, a GPS jump) fall back to the base.
  */
-function recordedSpeeds(route: Route): number[] | undefined {
+export function recordedSpeeds(route: Route): number[] | undefined {
     if (!hasTimestamps(route)) {
         return undefined;
     }
@@ -112,6 +112,60 @@ function recordedSpeeds(route: Route): number[] | undefined {
         }
     }
     return speeds.some((s) => isFinite(s)) ? speeds : undefined;
+}
+
+/**
+ * Base speed at a point, before the smart slowdown. Recorded speeds win when
+ * the route has them and replaying them is enabled.
+ *
+ * Exported because the Android backend bakes the same model into a track ahead
+ * of time instead of stepping it live; the two must not drift apart.
+ */
+export function baseSpeedKmh(speeds: number[] | undefined, index: number, options: PlayerOptions) {
+    if (options.useRecordedSpeed && speeds) {
+        const recorded = speeds[Math.min(index, speeds.length - 1)];
+        if (isFinite(recorded)) {
+            return recorded;
+        }
+    }
+    return options.baseSpeedKmh;
+}
+
+/**
+ * How much to scale the base speed by, in 0..1. Manoeuvres drive it when the
+ * route has them; otherwise the geometry's own curvature does, so an
+ * unannotated GPX still eases through hairpins instead of flying off them.
+ */
+export function slowdownFactor(route: Route, metres: number, curvature: number, options: PlayerOptions) {
+    if (!options.smartSlowdown) {
+        return 1;
+    }
+
+    let factor = 1;
+
+    const maneuver = nextManeuver(route, metres);
+    if (maneuver) {
+        const ahead = maneuver.distance - metres;
+        const sharpness = maneuverSharpness(maneuver.type);
+        const target = 1 - sharpness * (1 - options.minSlowdownFactor);
+        if (ahead <= 0) {
+            // just past it: ease back up over the first 30 m
+            const after = Math.min(1, -ahead / 30);
+            factor = Math.min(factor, target + (1 - target) * after);
+        } else if (ahead < options.maneuverLookahead) {
+            // ease in with a cosine ramp so the change is not a step
+            const approach = 1 - ahead / options.maneuverLookahead;
+            const eased = (1 - Math.cos(approach * Math.PI)) / 2;
+            factor = Math.min(factor, 1 - (1 - target) * eased);
+        }
+    }
+
+    // degrees of heading change per 100 m; a motorway is ~0, a hairpin ~180
+    if (curvature > 0) {
+        factor = Math.min(factor, 1 / (1 + curvature * 0.022));
+    }
+
+    return Math.max(options.minSlowdownFactor, Math.min(1, factor));
 }
 
 export interface Player extends Readable<PlayerSnapshot> {
@@ -163,55 +217,14 @@ export function createPlayer(callbacks: PlayerCallbacks, initial: PlayerOptions 
         return detour ? detour.along : along;
     }
 
-    /**
-     * Base speed at a point, before the smart slowdown. Recorded speeds win when
-     * the route has them and replaying them is enabled.
-     */
+    // a detour is a freshly built route with no recording behind it, so its
+    // segments never carry replayable speeds
     function baseSpeedAt(target: Route, index: number) {
-        if (options.useRecordedSpeed && !detour && speeds && target === route) {
-            const recorded = speeds[Math.min(index, speeds.length - 1)];
-            if (isFinite(recorded)) {
-                return recorded;
-            }
-        }
-        return options.baseSpeedKmh;
+        return baseSpeedKmh(!detour && target === route ? speeds : undefined, index, options);
     }
 
-    /**
-     * How much to scale the base speed by, in 0..1. Manoeuvres drive it when the
-     * route has them; otherwise the geometry's own curvature does, so an
-     * unannotated GPX still eases through hairpins instead of flying off them.
-     */
     function slowdownAt(target: Route, metres: number, curvature: number) {
-        if (!options.smartSlowdown) {
-            return 1;
-        }
-
-        let factor = 1;
-
-        const maneuver = nextManeuver(target, metres);
-        if (maneuver) {
-            const ahead = maneuver.distance - metres;
-            const sharpness = maneuverSharpness(maneuver.type);
-            const target_ = 1 - sharpness * (1 - options.minSlowdownFactor);
-            if (ahead <= 0) {
-                // just past it: ease back up over the first 30 m
-                const after = Math.min(1, -ahead / 30);
-                factor = Math.min(factor, target_ + (1 - target_) * after);
-            } else if (ahead < options.maneuverLookahead) {
-                // ease in with a cosine ramp so the change is not a step
-                const approach = 1 - ahead / options.maneuverLookahead;
-                const eased = (1 - Math.cos(approach * Math.PI)) / 2;
-                factor = Math.min(factor, 1 - (1 - target_) * eased);
-            }
-        }
-
-        // degrees of heading change per 100 m; a motorway is ~0, a hairpin ~180
-        if (curvature > 0) {
-            factor = Math.min(factor, 1 / (1 + curvature * 0.022));
-        }
-
-        return Math.max(options.minSlowdownFactor, Math.min(1, factor));
+        return slowdownFactor(target, metres, curvature, options);
     }
 
     function snapshot(): PlayerSnapshot {

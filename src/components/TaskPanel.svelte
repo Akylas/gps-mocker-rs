@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { ProgressBar } from 'carbon-components-svelte';
     import CheckmarkFilled from 'carbon-icons-svelte/lib/CheckmarkFilled.svelte';
     import CircleDash from 'carbon-icons-svelte/lib/CircleDash.svelte';
     import Close from 'carbon-icons-svelte/lib/Close.svelte';
@@ -21,14 +20,12 @@
                 <Close size={16} />
             </button>
         </div>
-        <ProgressBar
-            size="sm"
-            labelText={`${doneCount} / ${task.steps.length}`}
-            hideLabel={task.steps.length < 2}
-            max={task.steps.length}
-            value={doneCount}
-            status={task.running ? 'active' : task.failed ? 'error' : 'finished'}
-        />
+        <div class="task-progress" role="progressbar" aria-valuenow={doneCount} aria-valuemin="0" aria-valuemax={task.steps.length}>
+            <span style:width="{task.steps.length ? (doneCount / task.steps.length) * 100 : 0}%" />
+        </div>
+        {#if task.steps.length > 1}
+            <div class="task-count">{doneCount} / {task.steps.length}</div>
+        {/if}
         <ul class="task-steps">
             {#each task.steps as step}
                 <li class="task-step" class:is-error={step.status === 'error'}>
@@ -62,14 +59,37 @@
     .task-panel {
         width: 100%;
         padding: 12px 16px 14px;
-        background: #262626;
-        color: #f4f4f4;
-        border-left: 3px solid #0f62fe;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+        background: var(--surface-raised);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--accent);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
         font-size: 12px;
     }
     .task-panel.failed {
-        border-left-color: #fa4d56;
+        border-left-color: var(--danger);
+    }
+
+    .task-progress {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+        overflow: hidden;
+    }
+    .task-progress span {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+        transition: width 160ms ease;
+    }
+    .task-panel.failed .task-progress span {
+        background: var(--danger);
+    }
+    .task-count {
+        margin-top: 4px;
+        color: var(--text-faint);
+        font-size: 11px;
     }
 
     .task-header {
@@ -120,14 +140,14 @@
         word-break: break-word;
     }
     .task-step-detail {
-        color: #c6c6c6;
+        color: var(--text-muted);
         font-family: 'IBM Plex Mono', monospace;
         font-size: 11px;
         white-space: pre-wrap;
         word-break: break-word;
     }
     .task-step.is-error .task-step-detail {
-        color: #ffb3b8;
+        color: var(--danger);
     }
 
     .task-summary {
@@ -135,15 +155,15 @@
         font-weight: 600;
     }
     .task-panel.failed .task-summary {
-        color: #ffb3b8;
+        color: var(--danger);
     }
 
     .task-spinner {
         width: 12px;
         height: 12px;
         margin: 2px;
-        border: 2px solid rgba(244, 244, 244, 0.25);
-        border-top-color: #f4f4f4;
+        border: 2px solid var(--border-strong);
+        border-top-color: var(--text);
         border-radius: 50%;
         animation: task-spin 0.8s linear infinite;
     }
@@ -154,12 +174,12 @@
     }
 
     :global(.task-step .icon-done) {
-        fill: #42be65;
+        fill: var(--success);
     }
     :global(.task-step .icon-error) {
-        fill: #fa4d56;
+        fill: var(--danger);
     }
     :global(.task-step .icon-pending) {
-        fill: #8d8d8d;
+        fill: var(--text-faint);
     }
 </style>
