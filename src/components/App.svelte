@@ -25,6 +25,7 @@
     import { destination, distance as distanceBetween, formatDistance, type Position } from '../lib/geo';
     import { defaultsFor, withDefaults, type CostingValues } from '../lib/costing';
     import { buildGpx, parseGpx } from '../lib/gpx';
+    import { looksLikeJson, parseGeoJson } from '../lib/geojson';
     import { deleteRoute as deleteStoredRoute, isTauri, listRoutes, loadRoute, renameRoute as renameStoredRoute, saveRoute, type RouteSummary } from '../lib/library';
     import RouteLayers from '../lib/mapLayers';
     import TerrainLayer, { presetById, SOURCE_ID as TERRAIN_SOURCE_ID, TERRAIN_PRESETS, type TerrainEncoding } from '../lib/terrain';
@@ -594,7 +595,7 @@
                         return activeRoute;
                     },
                     player,
-                    importGpxContent
+                    importRouteContent
                 };
             }
 
@@ -1061,29 +1062,51 @@
         }
     }
 
-    async function importGpxFromPath(path: string) {
+    async function importRouteFromPath(path: string) {
         const name =
             path
                 .split(/[\\/]/)
                 .pop()
-                ?.replace(/\.gpx$/i, '') || 'GPX';
-        const xml = await readTextFile(path);
-        await importGpxContent(xml, name);
+                ?.replace(/\.(gpx|xml|geojson|json)$/i, '') || 'Route';
+        const text = await readTextFile(path);
+        await importRouteContent(text, name);
     }
 
-    async function importGpxContent(xml: string, name: string) {
+    function buildGpxRoutes(xml: string, name: string): Route[] {
         const document = parseGpx(xml, name);
+        return document.tracks.map((track) =>
+            buildRoute({
+                name: document.tracks.length > 1 ? `${name} — ${track.name}` : document.name || name,
+                source: 'gpx' as const,
+                points: track.points
+            })
+        );
+    }
 
-        // one file can hold several tracks; replay the longest and say so
-        const built = document.tracks
-            .map((track) =>
+    /**
+     * A GeoJSON export from a routing app carries the turn-by-turn data next to
+     * the shape, so the manoeuvres come along instead of being asked of
+     * Valhalla afterwards.
+     */
+    function buildGeoJsonRoutes(text: string, name: string): Route[] {
+        return parseGeoJson(text, name).map((line) =>
+            withManeuverDistances(
                 buildRoute({
-                    name: document.tracks.length > 1 ? `${name} — ${track.name}` : document.name || name,
-                    source: 'gpx' as const,
-                    points: track.points
+                    name: line.name,
+                    source: 'geojson' as const,
+                    points: line.points,
+                    maneuvers: line.maneuvers,
+                    waypoints: line.waypoints,
+                    costing: line.costing
                 })
             )
-            .sort((a, b) => routeLength(b) - routeLength(a));
+        );
+    }
+
+    async function importRouteContent(text: string, name: string) {
+        // the extension is only a hint — a dropped file may not have a useful
+        // one — so the content decides which reader gets it
+        const built = (looksLikeJson(text) ? buildGeoJsonRoutes(text, name) : buildGpxRoutes(text, name)).sort((a, b) => routeLength(b) - routeLength(a));
 
         const chosen = built[0];
         setActiveRoute(chosen);
@@ -1091,15 +1114,15 @@
             await persist(route);
         }
 
-        updateStep(
-            0,
-            'done',
+        const imported =
             built.length > 1
                 ? $_('gpx_imported_multi', { values: { count: built.length, length: formatDistance(routeLength(chosen)) } })
-                : $_('gpx_imported', { values: { points: chosen.points.length, length: formatDistance(routeLength(chosen)) } })
-        );
+                : $_('gpx_imported', { values: { points: chosen.points.length, length: formatDistance(routeLength(chosen)) } });
+        updateStep(0, 'done', chosen.maneuvers?.length ? `${imported} · ${$_('maneuvers_found', { values: { count: chosen.maneuvers.length } })}` : imported);
 
-        if (settings.autoComputeManeuvers) {
+        // map matching would replace instructions the file already gave us with
+        // its own guesses, so it only runs when there are none
+        if (settings.autoComputeManeuvers && !chosen.maneuvers?.length) {
             finish();
             await computeManeuvers();
             return;
@@ -1108,15 +1131,22 @@
     }
 
     async function importGpx() {
-        startTask($_('import_gpx'), [{ label: $_('reading_gpx') }]);
+        startTask($_('import_route'), [{ label: $_('reading_route') }]);
         updateStep(0, 'running');
         try {
-            const selected = await openDialog({ multiple: false, filters: [{ name: 'GPX', extensions: ['gpx', 'xml'] }] });
+            const selected = await openDialog({
+                multiple: false,
+                filters: [
+                    { name: 'GPX / GeoJSON', extensions: ['gpx', 'xml', 'geojson', 'json'] },
+                    { name: 'GPX', extensions: ['gpx', 'xml'] },
+                    { name: 'GeoJSON', extensions: ['geojson', 'json'] }
+                ]
+            });
             if (!selected) {
                 dismissTask();
                 return;
             }
-            await importGpxFromPath(selected as string);
+            await importRouteFromPath(selected as string);
         } catch (error) {
             updateStep(0, 'error', errorMessage(error));
             finish();
@@ -1476,14 +1506,14 @@
     if (isTauri) {
         listen<{ paths?: string[] }>('tauri://drag-drop', async ({ payload }) => {
             dragging = false;
-            const path = payload?.paths?.find((candidate) => /\.(gpx|xml)$/i.test(candidate));
+            const path = payload?.paths?.find((candidate) => /\.(gpx|xml|geojson|json)$/i.test(candidate));
             if (!path) {
                 return;
             }
-            startTask($_('import_gpx'), [{ label: path }]);
+            startTask($_('import_route'), [{ label: path }]);
             updateStep(0, 'running');
             try {
-                await importGpxFromPath(path);
+                await importRouteFromPath(path);
             } catch (error) {
                 updateStep(0, 'error', errorMessage(error));
                 finish();
@@ -1603,7 +1633,7 @@
         <Rail>
             <svelte:fragment slot="top">
                 <IconButton icon={Search} label={$_('search_location')} active={searchOpen} on:click={() => (searchOpen = !searchOpen)} />
-                <IconButton icon={DocumentImport} label={$_('import_gpx')} on:click={importGpx} />
+                <IconButton icon={DocumentImport} label={$_('import_route')} on:click={importGpx} />
                 <IconButton icon={Save} label={$_('saved_routes')} on:click={() => refreshLibrary().then(() => (libraryOpen = true))} />
                 <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
             </svelte:fragment>
@@ -1725,7 +1755,7 @@
                     />
                 {:else}
                     <div class="empty-peek">
-                        <Button size="small" on:click={importGpx}>{$_('import_gpx')}</Button>
+                        <Button size="small" on:click={importGpx}>{$_('import_route')}</Button>
                         <Button size="small" on:click={() => refreshLibrary().then(() => (libraryOpen = true))}>{$_('saved_routes')}</Button>
                         <Button size="small" on:click={() => toggleRouteBuilder(true)}>{$_('build_route')}</Button>
                     </div>
