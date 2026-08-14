@@ -14,7 +14,7 @@
     import Settings from 'carbon-icons-svelte/lib/Settings.svelte';
     import { KeyboardKeyHold } from 'hold-event';
     import { RulerControl } from 'mapbox-gl-controls';
-    import { Map, NavigationControl, TerrainControl } from 'maplibre-gl';
+    import { Map, NavigationControl } from 'maplibre-gl';
     import 'maplibre-gl/dist/maplibre-gl.css';
     import { onDestroy, onMount } from 'svelte';
     import { _ } from 'svelte-i18n';
@@ -24,6 +24,7 @@
     import { buildGpx, parseGpx } from '../lib/gpx';
     import { deleteRoute as deleteStoredRoute, isTauri, listRoutes, loadRoute, renameRoute as renameStoredRoute, saveRoute, type RouteSummary } from '../lib/library';
     import RouteLayers from '../lib/mapLayers';
+    import TerrainLayer, { presetById, SOURCE_ID as TERRAIN_SOURCE_ID, TERRAIN_PRESETS, type TerrainEncoding } from '../lib/terrain';
     import { createPlayer, DEFAULT_PLAYER_OPTIONS, type PlayerSnapshot } from '../lib/player';
     import { buildRoute, positionAt, routeLength, snapToRoute, type Maneuver, type Route } from '../lib/route';
     import { dismissTask, errorMessage, finishTask, startTask, task, updateStep } from '../lib/tasks';
@@ -70,8 +71,15 @@
         speedInKm: 90,
         keyRepeatSpeedMs: 16.6,
         mapStyle: 'https://api.maptiler.com/maps/streets/style.json?key=tEP4ZtWVB93CfqyCnbR0',
-        terrainDataUrl: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
-        terrainDataTerrarium: true,
+        // terrain
+        terrainPreset: 'mapterhorn',
+        terrainDataUrl: TERRAIN_PRESETS[0].url,
+        terrainEncoding: TERRAIN_PRESETS[0].encoding as TerrainEncoding,
+        terrainTileSize: TERRAIN_PRESETS[0].tileSize,
+        terrainMaxZoom: TERRAIN_PRESETS[0].maxzoom,
+        terrainExaggeration: 1,
+        terrain3d: false,
+        hillshade: false,
         mockEnabled: false,
         // playback
         playbackSpeed: 50,
@@ -414,46 +422,44 @@
      * map                                                              *
      * ---------------------------------------------------------------- */
 
-    let terrainControlAdded = false;
     let shouldMoveOnClick = true;
+    let terrain: TerrainLayer;
 
-    async function setTerrainSource(url, terrarium: boolean) {
-        if (!map || !url) {
-            return;
-        }
-        let maxzoom;
-        if (url.endsWith('.json')) {
-            const jsonData = await fetch(url).then((data) => data.json());
-            url = jsonData.tiles[0];
-            maxzoom = jsonData.maxzoom;
-        }
-        if (!map.loaded) {
-            map.once('load', () => setTerrainSource(url, terrarium));
+    async function applyTerrain() {
+        if (!terrain) {
             return;
         }
         try {
-            map.removeSource('terrainSource');
-        } catch (err) {}
-        try {
-            map.addSource('terrainSource', {
-                type: 'raster-dem',
-                encoding: terrarium ? 'terrarium' : 'mapbox',
-                tiles: [url],
-                maxzoom,
-                tileSize: 256
+            await terrain.apply({
+                url: settings.terrainDataUrl,
+                encoding: settings.terrainEncoding,
+                tileSize: settings.terrainTileSize,
+                maxzoom: settings.terrainMaxZoom,
+                exaggeration: settings.terrainExaggeration,
+                terrain3d: settings.terrain3d,
+                hillshade: settings.hillshade
             });
-            if (!terrainControlAdded) {
-                terrainControlAdded = true;
-                map.addControl(new TerrainControl({ source: 'terrainSource', exaggeration: 1 }));
-            }
-        } catch (err) {
-            console.error(err);
+        } catch (error) {
+            startTask($_('terrain'), [{ label: settings.terrainDataUrl }]);
+            updateStep(0, 'error', errorMessage(error));
+            finish();
         }
+    }
+
+    /** Switching preset pulls its url, encoding, tile size and zoom cap along. */
+    function selectTerrainPreset(id: string) {
+        const preset = presetById(id);
+        $store = {
+            ...settings,
+            terrainPreset: id,
+            ...(preset && preset.url ? { terrainDataUrl: preset.url } : {}),
+            ...(preset ? { terrainEncoding: preset.encoding, terrainTileSize: preset.tileSize, terrainMaxZoom: preset.maxzoom } : {})
+        };
     }
 
     onMount(async () => {
         try {
-            appliedStyleUrl = $store.customMapStyleUrl && $store.customMapStyle ? $store.customMapStyleUrl : $store.mapStyle;
+            appliedStyleUrl = $store.mapStyle;
             map = new Map({
                 container: mapContainer,
                 style: appliedStyleUrl,
@@ -463,6 +469,7 @@
             });
 
             layers = new RouteLayers(map);
+            terrain = new TerrainLayer(map);
             if (import.meta.env.DEV) {
                 // handle for poking at sources and layers from the dev console
                 (window as any).__gm = {
@@ -480,12 +487,13 @@
                 };
             }
 
-            map.on('load', () => {
-                layers.install();
-                applyTerrain($store.customTerrainDataUrl && $store.customTerrainData ? $store.customTerrainDataUrl : $store.terrainDataUrl, $store.terrainDataTerrarium);
+            // a style swap drops every user source and layer; put ours back.
+            // `load` is unreliable here: it waits on every source, and the DEM
+            // source can keep tiles outstanding indefinitely.
+            map.on('styledata', () => {
+                layers?.install();
+                syncTerrain(terrainKey());
             });
-            // a style swap drops every user source and layer; put ours back
-            map.on('styledata', () => layers?.install());
 
             userLocationControl = new UserLocationControl({ trackUserLocation: true });
             map.addControl(userLocationControl);
@@ -559,24 +567,82 @@
     let appliedStyleUrl: string | undefined;
     let appliedTerrain: string | undefined;
 
-    $: applyMapStyle($store.customMapStyleUrl && $store.customMapStyle ? $store.customMapStyleUrl : $store.mapStyle);
-    $: applyTerrain($store.customTerrainDataUrl && $store.customTerrainData ? $store.customTerrainDataUrl : $store.terrainDataUrl, $store.terrainDataTerrarium);
+    $: applyMapStyle($store.mapStyle);
+    $: syncTerrain(
+        `${$store.terrainDataUrl}|${$store.terrainEncoding}|${$store.terrainTileSize}|${$store.terrainMaxZoom}|${$store.terrainExaggeration}|${$store.terrain3d}|${$store.hillshade}`
+    );
 
-    function applyMapStyle(url: string) {
+    let styleDraft = settings.mapStyle;
+    let terrainDraft = settings.terrainDataUrl;
+    // keep the drafts honest when something else changes the value (presets,
+    // reset button, a settings import)
+    $: styleDraft = $store.mapStyle;
+    $: terrainDraft = $store.terrainDataUrl;
+
+    const commitStyleDraft = debounce((value: string) => ($store.mapStyle = value), 700);
+    const commitTerrainDraft = debounce((value: string) => {
+        $store = { ...settings, terrainDataUrl: value, terrainPreset: 'custom' };
+    }, 700);
+
+    /**
+     * Loads the style document ourselves instead of handing maplibre the URL.
+     *
+     * `setStyle(url)` swallows the outcome: it blanks the map first and, if the
+     * fetch never lands, leaves it blank with no error anywhere — which is what
+     * a mistyped or unreachable style URL looked like. Fetching first means a
+     * bad URL is reported and the current style is kept.
+     */
+    async function applyMapStyle(url: string) {
         if (!map || !url || url === appliedStyleUrl) {
             return;
         }
+        const previous = appliedStyleUrl;
         appliedStyleUrl = url;
-        map.setStyle(url);
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const style = await response.json();
+            if (!style || typeof style !== 'object' || !style.layers || !style.sources) {
+                throw new Error($_('not_a_map_style'));
+            }
+            if (appliedStyleUrl !== url) {
+                return; // superseded while we were fetching
+            }
+            map.setStyle(style);
+        } catch (error) {
+            appliedStyleUrl = previous;
+            startTask($_('mapstyle_url'), [{ label: url }]);
+            updateStep(0, 'error', errorMessage(error));
+            finish();
+        }
     }
 
-    function applyTerrain(url: string, terrarium: boolean) {
-        const key = `${url}|${terrarium}`;
-        if (!url || key === appliedTerrain) {
+    /**
+     * Applies the terrain settings when they change, and again whenever the
+     * source has gone missing — a style swap drops it.
+     *
+     * Both conditions matter. Keying alone missed the very first apply, because
+     * the settings are read before the map exists and `load` never fires while
+     * a source still has tiles outstanding. Re-applying unconditionally is not
+     * an option either: this runs from `styledata`, and every add mutates the
+     * style, which fires `styledata` again.
+     */
+    function syncTerrain(key: string) {
+        if (!terrain || !map) {
+            return;
+        }
+        if (key === appliedTerrain && map.getSource(TERRAIN_SOURCE_ID)) {
             return;
         }
         appliedTerrain = key;
-        setTerrainSource(url, terrarium);
+        applyTerrain();
+    }
+
+    function terrainKey() {
+        return `${settings.terrainDataUrl}|${settings.terrainEncoding}|${settings.terrainTileSize}|${settings.terrainMaxZoom}|${settings.terrainExaggeration}|${settings.terrain3d}|${settings.hillshade}`;
     }
 
     /* ---------------------------------------------------------------- *
@@ -594,6 +660,9 @@
             waypoints = [];
             builderPreview = undefined;
             layers?.setWaypoints([]);
+            // the preview replaced whatever was drawn; put the real route back
+            layers?.setRoute(activeRoute);
+            layers?.setProgress(snapshot?.along ?? 0);
         }
     }
 
@@ -1246,11 +1315,76 @@
 
                     <HeaderPanelDivider />
                     <h4>{$_('map')}</h4>
-                    <Checkbox bind:checked={$store.customMapStyle} labelText={$_('local_data')} disabled={!$store.customMapStyleUrl || $store.customMapStyleUrl.length === 0} />
-                    <TextInput bind:value={$store.customMapStyleUrl} labelText={$_('mapstyle_url')} autocomplete="off" spellcheck="false" autocorrect="off" />
-                    <Checkbox bind:checked={$store.terrainDataTerrarium} labelText={$_('terrain_terrarium')} />
-                    <Checkbox bind:checked={$store.customTerrainData} labelText={$_('local_data')} disabled={!$store.customTerrainDataUrl || $store.customTerrainDataUrl.length === 0} />
-                    <TextInput bind:value={$store.customTerrainDataUrl} labelText={$_('terrain_data_url')} autocomplete="off" spellcheck="false" autocorrect="off" />
+                    <TextInput
+                        bind:value={styleDraft}
+                        labelText={$_('mapstyle_url')}
+                        helperText={$_('mapstyle_url_help')}
+                        autocomplete="off"
+                        spellcheck="false"
+                        autocorrect="off"
+                        on:input={(event) => commitStyleDraft(event.detail)}
+                        on:blur={() => ($store.mapStyle = styleDraft)}
+                    />
+                    <div class="drawer-actions">
+                        <Button size="small" kind="ghost" on:click={() => ($store.mapStyle = DEFAULT_SETTINGS.mapStyle)}>{$_('reset_to_default')}</Button>
+                    </div>
+
+                    <HeaderPanelDivider />
+                    <h4>{$_('terrain')}</h4>
+                    <div class="preset-row">
+                        {#each TERRAIN_PRESETS as preset}
+                            <button
+                                type="button"
+                                class="preset"
+                                class:active={$store.terrainPreset === preset.id}
+                                on:click={() => selectTerrainPreset(preset.id)}
+                            >
+                                {preset.label}
+                            </button>
+                        {/each}
+                    </div>
+                    <TextInput
+                        bind:value={terrainDraft}
+                        labelText={$_('terrain_data_url')}
+                        helperText={$_('terrain_data_url_help')}
+                        autocomplete="off"
+                        spellcheck="false"
+                        autocorrect="off"
+                        on:input={(event) => commitTerrainDraft(event.detail)}
+                        on:blur={() => commitTerrainDraft(terrainDraft)}
+                    />
+                    <div class="field-row">
+                        <label class="field">
+                            <span>{$_('terrain_encoding')}</span>
+                            <select bind:value={$store.terrainEncoding}>
+                                <option value="terrarium">terrarium</option>
+                                <option value="mapbox">mapbox</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>{$_('terrain_tile_size')}</span>
+                            <select bind:value={$store.terrainTileSize}>
+                                <option value={256}>256</option>
+                                <option value={512}>512</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>{$_('terrain_max_zoom')}</span>
+                            <input type="number" min="1" max="22" bind:value={$store.terrainMaxZoom} />
+                        </label>
+                    </div>
+                    <Checkbox bind:checked={$store.terrain3d} labelText={$_('terrain_3d')} />
+                    <Checkbox bind:checked={$store.hillshade} labelText={$_('hillshade')} />
+                    {#if $store.terrain3d}
+                        <Slider
+                            hideTextInput
+                            bind:value={$store.terrainExaggeration}
+                            min={0.1}
+                            max={3}
+                            step={0.1}
+                            labelText={`${$_('exageration')}: ${$store.terrainExaggeration.toFixed(1)}×`}
+                        />
+                    {/if}
 
                     <HeaderPanelDivider />
                     <h4>{$_('android_setup')}</h4>
@@ -1442,6 +1576,55 @@
     .builder-options-toggle:hover,
     .builder-options-toggle.open {
         background: rgba(0, 0, 0, 0.3);
+    }
+
+    .preset-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 10px;
+    }
+    .preset {
+        padding: 3px 8px;
+        border: 1px solid #6f6f6f;
+        background: none;
+        color: #c6c6c6;
+        cursor: pointer;
+        font-size: 11px;
+    }
+    .preset:hover {
+        border-color: #a8a8a8;
+        color: #f4f4f4;
+    }
+    .preset.active {
+        border-color: #0f62fe;
+        background: #0f62fe;
+        color: #fff;
+    }
+
+    .field-row {
+        display: flex;
+        gap: 8px;
+        margin: 10px 0;
+    }
+    .field {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 3px;
+        color: #a8a8a8;
+        font-size: 11px;
+    }
+    .field select,
+    .field input {
+        width: 100%;
+        padding: 3px 4px;
+        border: 1px solid #6f6f6f;
+        background: #262626;
+        color: #f4f4f4;
+        font-family: inherit;
+        font-size: 12px;
     }
 
     .drawer-costing {
