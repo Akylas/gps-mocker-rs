@@ -23,7 +23,10 @@ openssl = "0.10.42"
 
 [target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies.rusty_libimobiledevice]
 features = [ "static", "vendored" ]
-git = "https://github.com/jkcoxson/rusty_libimobiledevice"
+# Local fork of https://github.com/jkcoxson/rusty_libimobiledevice @ b6cdf4bb
+# Only change: build.rs pins the vendored libimobiledevice clone to tag 1.3.0
+# (master requires libtatsu, which the vendored chain does not build).
+path = "vendor/rusty_libimobiledevice"
 
 [features]
 default = [ "custom-protocol" ]

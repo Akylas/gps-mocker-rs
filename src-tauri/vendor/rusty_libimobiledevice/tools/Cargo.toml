@@ -1,0 +1,44 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+[dependencies]
+rusty_libimobiledevice = { version = "*", path = "../", features = [ "static", "vendored" ] }
+plist_plus = { version = "*", features = [ "static", "vendored" ] }
+env_logger = { version = "*" }
+zip = { version = "*" }
+regex = { version = "*" }
+
+[[bin]]
+name = "idevice_id"
+path = "src/idevice_id.rs"
+
+[[bin]]
+name = "idevicescreenshot"
+path = "src/idevicescreenshot.rs"
+
+[[bin]]
+name = "ideviceimagemounter"
+path = "src/ideviceimagemounter.rs"
+
+[[bin]]
+name = "ideviceinfo"
+path = "src/ideviceinfo.rs"
+
+[[bin]]
+name = "idevicedebug"
+path = "src/idevicedebug.rs"
+
+[[bin]]
+name = "idevicelistapps"
+path = "src/idevicelistapps.rs"
+
+[[bin]]
+name = "ideviceinstaller"
+path = "src/ideviceinstaller.rs"
+
+[[bin]]
+name = "test"
+path = "src/test.rs"
