@@ -1,18 +1,19 @@
 {
-    "name": "@nativescript-community/ui-canvaslabel",
+    "name": "gps-mocker",
+    "description": "Send a mocked GPS position, or a whole route, to Android and iOS devices",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/farfromrefug/gps-mocker-rs.git"
+        "url": "git+https://github.com/Akylas/gps-mocker-rs.git"
     },
     "author": {
         "name": "Martin Guillon",
         "email": "martin@akylas.fr"
     },
-    "license": "ISC",
+    "license": "MIT",
     "bugs": {
-        "url": "https://github.com/farfromrefug/gps-mocker-rs/issues"
+        "url": "https://github.com/Akylas/gps-mocker-rs/issues"
     },
-    "homepage": "https://github.com/farfromrefug/gps-mocker-rs#readme",
+    "homepage": "https://github.com/Akylas/gps-mocker-rs#readme",
     "commitlint": {
         "extends": [
             "@commitlint/config-conventional"

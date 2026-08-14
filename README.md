@@ -295,5 +295,4 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/) —
 
 ## License
 
-Currently unsettled: `src-tauri/Cargo.toml` declares MIT, `package.json` declares
-ISC, and the repository has no `LICENSE` file.
+[MIT](LICENSE).
