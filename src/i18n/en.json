@@ -12,5 +12,16 @@
   "outline_stroke_width": "Outline stroke width",
   "search_location": "Search location",
   "speed": "speed",
+  "task_allow_mock_location": "Allow mock location",
+  "task_dismiss": "Dismiss",
+  "task_exit_code": "exited with code {code}",
+  "task_failed": "{count} of {total} steps failed.",
+  "task_grant": "Grant {permission}",
+  "task_install_apk": "Install APK",
+  "task_install_apk_step": "Install io.appium.settings",
+  "task_learn_more": "Open project page",
+  "task_setup_adb": "Setup Android device",
+  "task_start_settings_app": "Start the settings app",
+  "task_succeeded": "Done.",
   "viewing_distance": "Viewing distance"
 }

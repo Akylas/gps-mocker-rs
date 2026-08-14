@@ -4,10 +4,9 @@
 )]
 use byteorder::{BigEndian, ByteOrder};
 use std::process::Command;
-use tauri::{
-  AboutMetadata, CustomMenuItem, Menu, MenuEntry, MenuItem, Submenu, WindowBuilder, WindowUrl,
-};
-use std::str;
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::path::BaseDirectory;
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 
 #[cfg(target_os = "macos")]
@@ -149,105 +148,108 @@ struct Payload {
   message: String,
 }
 
+// Returns adb's own output so the webview can show what actually happened,
+// instead of a bare boolean. Runs off the main thread: `adb install` takes
+// seconds and would otherwise freeze the UI that reports on it.
 #[tauri::command]
-fn install_apk(handle: tauri::AppHandle) -> Result<bool, String> {
-  let resource_path = handle.path_resolver()
-      .resolve_resource("../resources/settings_apk-debug.apk")
-      .expect("failed to resolve resource settings_apk-debug.apk");
-    let output = Command::new("adb")
-    .args(&["install", &(resource_path.into_os_string().into_string().unwrap())])
-    .output()
-    .expect("Failed to install APK");
+async fn install_apk(handle: tauri::AppHandle) -> Result<String, String> {
+  let resource_path = handle
+    .path()
+    .resolve("settings_apk-debug.apk", BaseDirectory::Resource)
+    .map_err(|e| format!("failed to resolve the bundled APK: {}", e))?;
 
-  if output.status.success() {
-    Ok(true)
-  } else {
-    println!("error installing apk {:?}", str::from_utf8(&output.stderr) );
-    Ok(false)
-  }
+  tauri::async_runtime::spawn_blocking(move || {
+    let output = Command::new("adb")
+      .arg("install")
+      .arg(&resource_path)
+      .output()
+      .map_err(|e| format!("failed to run adb: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if output.status.success() {
+      Ok(stdout)
+    } else if !stderr.is_empty() {
+      Err(stderr)
+    } else if !stdout.is_empty() {
+      Err(stdout)
+    } else {
+      Err(format!("adb install failed ({})", output.status))
+    }
+  })
+  .await
+  .map_err(|e| format!("apk install task failed: {}", e))?
 }
 
 fn main() {
-  let ctx = tauri::generate_context!();
-
   tauri::Builder::default()
     .plugin(tauri_plugin_window_state::Builder::default().build())
+    .plugin(tauri_plugin_shell::init())
+    .plugin(tauri_plugin_os::init())
     .invoke_handler(tauri::generate_handler![
       install_apk,
       send_location_to_simulators,
       send_location_to_devices
     ])
-    .menu(Menu::with_items([
+    .menu(|handle| {
+      let mut menu = MenuBuilder::new(handle);
+
       #[cfg(target_os = "macos")]
-      MenuEntry::Submenu(Submenu::new(
-        &ctx.package_info().name,
-        Menu::with_items([
-          MenuItem::About(ctx.package_info().name.clone(), AboutMetadata::new()).into(),
-          MenuItem::Separator.into(),
-          MenuItem::Services.into(),
-          MenuItem::Separator.into(),
-          MenuItem::Hide.into(),
-          MenuItem::HideOthers.into(),
-          MenuItem::ShowAll.into(),
-          MenuItem::Separator.into(),
-          MenuItem::Quit.into(),
-        ]),
-      )),
-      MenuEntry::Submenu(Submenu::new(
-        "File",
-        Menu::with_items([MenuItem::CloseWindow.into()]),
-      )),
-      // MenuEntry::Submenu(Submenu::new(
-      //   "Edit",
-      //   Menu::with_items([
-      //     MenuItem::Undo.into(),
-      //     MenuItem::Redo.into(),
-      //     MenuItem::Separator.into(),
-      //     MenuItem::Cut.into(),
-      //     MenuItem::Copy.into(),
-      //     MenuItem::Paste.into(),
-      //     #[cfg(not(target_os = "macos"))]
-      //     MenuItem::Separator.into(),
-      //     MenuItem::SelectAll.into(),
-      //   ]),
-      // )),
-      MenuEntry::Submenu(Submenu::new(
-        "View",
-        Menu::with_items([MenuItem::EnterFullScreen.into()]),
-      )),
-      MenuEntry::Submenu(Submenu::new(
-        "Window",
-        Menu::with_items([MenuItem::Minimize.into(), MenuItem::Zoom.into()]),
-      )),
-      MenuEntry::Submenu(Submenu::new(
-        "Simulator",
-        Menu::new()
-          .add_item(CustomMenuItem::new("setup", "Setup"))
-          .add_item(CustomMenuItem::new("install_apk", "Install APK")),
-      )),
+      {
+        let app_menu = SubmenuBuilder::new(handle, handle.package_info().name.clone())
+          .about(Some(AboutMetadata::default()))
+          .separator()
+          .services()
+          .separator()
+          .hide()
+          .hide_others()
+          .show_all()
+          .separator()
+          .quit()
+          .build()?;
+        menu = menu.item(&app_menu);
+      }
+
+      let file_menu = SubmenuBuilder::new(handle, "File").close_window().build()?;
+
+      let view_menu = {
+        let builder = SubmenuBuilder::new(handle, "View");
+        #[cfg(target_os = "macos")]
+        let builder = builder.fullscreen();
+        builder.build()?
+      };
+
+      let window_menu = SubmenuBuilder::new(handle, "Window")
+        .minimize()
+        .maximize()
+        .build()?;
+
+      let simulator_menu = SubmenuBuilder::new(handle, "Simulator")
+        .item(&MenuItemBuilder::with_id("setup", "Setup").build(handle)?)
+        .item(&MenuItemBuilder::with_id("install_apk", "Install APK").build(handle)?)
+        .build()?;
+
       // You should always have a Help menu on macOS because it will automatically
       // show a menu search field
-      MenuEntry::Submenu(Submenu::new(
-        "Help",
-        Menu::with_items([CustomMenuItem::new("learn_more", "Learn More").into()]),
-      )),
-    ]))
-    // .on_menu_event(|event| {
-    // let event_name = event.menu_item_id();
-    // println!("on_menu_event {:?}", event_name);
-    // match event_name {
-    //   "Learn More" => {
-    //     shell::open(
-    //       "https://github.com/probablykasper/tauri-template".to_string(),
-    //       None,
-    //     )
-    //     .unwrap();
-    //   }
-    //   _ => {}
-    // }
-    // })
+      let help_menu = SubmenuBuilder::new(handle, "Help")
+        .item(&MenuItemBuilder::with_id("learn_more", "Learn More").build(handle)?)
+        .build()?;
+
+      menu
+        .item(&file_menu)
+        .item(&view_menu)
+        .item(&window_menu)
+        .item(&simulator_menu)
+        .item(&help_menu)
+        .build()
+    })
+    // v2 no longer forwards menu clicks to the webview, so re-emit them ourselves
+    .on_menu_event(|app, event| {
+      let _ = app.emit("menu", event.id().0.clone());
+    })
     .setup(|app| {
-      WindowBuilder::new(app, "main", WindowUrl::default())
+      WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("GPS Mocker")
         .resizable(true)
         .decorations(true)
@@ -259,6 +261,6 @@ fn main() {
         .build()?;
       Ok(())
     })
-    .run(ctx)
+    .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
