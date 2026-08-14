@@ -1255,27 +1255,63 @@
                 continue;
             }
 
+            const needsInstall = readiness.reason === 'not-installed';
             const steps = [
-                ...(readiness.reason === 'not-installed' ? [{ label: $_('task_install_apk_step') + on }] : []),
+                ...(needsInstall ? [{ label: $_('task_fetch_apk_step') + on }, { label: $_('task_install_apk_step') + on }] : []),
                 ...setupCommands(serial).map(({ labelKey, command }) => ({ label: $_(labelKey) + on, command })),
                 { label: $_('task_verify_device') + on }
             ];
             startTask($_('task_prepare_device'), steps);
 
             let index = 0;
-            if (readiness.reason === 'not-installed') {
+            if (needsInstall) {
+                // The Android build is published alongside this desktop one, so
+                // there is nothing for the user to find. It is only fetched the
+                // first time; after that the copy on disk is used and preparing
+                // a device works with no network at all.
                 updateStep(index, 'running');
+                let apkPath: string;
+                let fromCache = false;
                 try {
-                    const apk = await openDialog({ multiple: false, filters: [{ name: 'APK', extensions: ['apk'] }] });
-                    if (!apk) {
-                        dismissTask();
+                    const apk = await invoke<{ path: string; tag: string; downloaded: boolean }>('ensure_helper_apk', { force: false });
+                    apkPath = apk.path;
+                    fromCache = !apk.downloaded;
+                    updateStep(index, 'done', $_(apk.downloaded ? 'apk_downloaded' : 'apk_cached', { values: { tag: apk.tag } }));
+                } catch (error) {
+                    // a development build has no release to fetch from, so fall
+                    // back to an APK the user built themselves
+                    const picked = await openDialog({ multiple: false, filters: [{ name: 'APK', extensions: ['apk'] }] });
+                    if (!picked) {
+                        updateStep(index, 'error', errorMessage(error));
+                        finish();
                         return;
                     }
-                    updateStep(index, 'done', await invoke<string>('install_apk', { serial, apkPath: apk as string }));
+                    apkPath = picked as string;
+                    updateStep(index, 'done', $_('apk_from_file', { values: { error: errorMessage(error) } }));
+                }
+                index += 1;
+
+                updateStep(index, 'running');
+                try {
+                    updateStep(index, 'done', await invoke<string>('install_apk', { serial, apkPath }));
                 } catch (error) {
-                    updateStep(index, 'error', errorMessage(error));
-                    finish();
-                    return;
+                    // A cached APK that will not install is worth fetching once
+                    // more: the release it came from may have been replaced.
+                    let recovered = false;
+                    if (fromCache) {
+                        try {
+                            const fresh = await invoke<{ path: string }>('ensure_helper_apk', { force: true });
+                            updateStep(index, 'done', await invoke<string>('install_apk', { serial, apkPath: fresh.path }));
+                            recovered = true;
+                        } catch {
+                            // report the first failure, which is the useful one
+                        }
+                    }
+                    if (!recovered) {
+                        updateStep(index, 'error', errorMessage(error));
+                        finish();
+                        return;
+                    }
                 }
                 index += 1;
             }

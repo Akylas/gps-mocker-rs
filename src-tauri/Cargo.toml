@@ -28,8 +28,14 @@ tauri-plugin-os = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dev-dependencies]
+tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
+
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-window-state = "2"
+# fetches the Android build from the GitHub release; rustls so a Linux desktop
+# build does not need OpenSSL headers
+reqwest = { version = "0.12", default-features = false, features = [ "rustls-tls", "json" ] }
 
 [target."cfg(target_os = \"android\")".dependencies]
 tauri-plugin-mock-location = { path = "plugins/tauri-plugin-mock-location" }

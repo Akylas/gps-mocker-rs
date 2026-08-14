@@ -27,6 +27,7 @@ pub fn run() {
   let builder = builder
     .invoke_handler(tauri::generate_handler![
       desktop::install_apk,
+      desktop::ensure_helper_apk,
       apple::send_location_to_simulators,
       apple::send_location_to_devices
     ])
