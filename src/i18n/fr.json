@@ -11,6 +11,17 @@
   "mapstyle_url": "URL des données de carte",
   "outline_stroke_width": "Largeur ligne d'esquisse",
   "search_location": "Lieu de recherche",
+  "task_allow_mock_location": "Autoriser la position simulée",
+  "task_dismiss": "Fermer",
+  "task_exit_code": "terminé avec le code {code}",
+  "task_failed": "{count} étapes sur {total} ont échoué.",
+  "task_grant": "Autoriser {permission}",
+  "task_install_apk": "Installer l'APK",
+  "task_install_apk_step": "Installer io.appium.settings",
+  "task_learn_more": "Ouvrir la page du projet",
+  "task_setup_adb": "Configurer l'appareil Android",
+  "task_start_settings_app": "Démarrer l'application settings",
+  "task_succeeded": "Terminé.",
   "terrain_data_url": "URL pour les données de terrain",
   "viewing_distance": "Distance de vue"
 }

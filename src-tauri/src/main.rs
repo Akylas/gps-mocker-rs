@@ -7,7 +7,6 @@ use std::process::Command;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use std::str;
 
 
 #[cfg(target_os = "macos")]
@@ -149,22 +148,38 @@ struct Payload {
   message: String,
 }
 
+// Returns adb's own output so the webview can show what actually happened,
+// instead of a bare boolean. Runs off the main thread: `adb install` takes
+// seconds and would otherwise freeze the UI that reports on it.
 #[tauri::command]
-fn install_apk(handle: tauri::AppHandle) -> Result<bool, String> {
-  let resource_path = handle.path()
-      .resolve("settings_apk-debug.apk", BaseDirectory::Resource)
-      .expect("failed to resolve resource settings_apk-debug.apk");
-    let output = Command::new("adb")
-    .args(&["install", &(resource_path.into_os_string().into_string().unwrap())])
-    .output()
-    .expect("Failed to install APK");
+async fn install_apk(handle: tauri::AppHandle) -> Result<String, String> {
+  let resource_path = handle
+    .path()
+    .resolve("settings_apk-debug.apk", BaseDirectory::Resource)
+    .map_err(|e| format!("failed to resolve the bundled APK: {}", e))?;
 
-  if output.status.success() {
-    Ok(true)
-  } else {
-    println!("error installing apk {:?}", str::from_utf8(&output.stderr) );
-    Ok(false)
-  }
+  tauri::async_runtime::spawn_blocking(move || {
+    let output = Command::new("adb")
+      .arg("install")
+      .arg(&resource_path)
+      .output()
+      .map_err(|e| format!("failed to run adb: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if output.status.success() {
+      Ok(stdout)
+    } else if !stderr.is_empty() {
+      Err(stderr)
+    } else if !stdout.is_empty() {
+      Err(stdout)
+    } else {
+      Err(format!("adb install failed ({})", output.status))
+    }
+  })
+  .await
+  .map_err(|e| format!("apk install task failed: {}", e))?
 }
 
 fn main() {

@@ -5,7 +5,7 @@
     import { listen } from '@tauri-apps/api/event';
     import { type as osType_ } from '@tauri-apps/plugin-os';
     import { Command, open } from '@tauri-apps/plugin-shell';
-    import { Checkbox, Content, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput } from 'carbon-components-svelte';
+    import { Button, Checkbox, Content, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, ProgressBar, SkipToContent, Slider, TextInput } from 'carbon-components-svelte';
     import { KeyboardKeyHold } from 'hold-event';
     import { RulerControl } from 'mapbox-gl-controls';
     import { Map, NavigationControl, TerrainControl } from 'maplibre-gl';
@@ -15,6 +15,10 @@
     import { writable } from 'svelte/store';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
     import UserLocationControl from './UserLocationControl';
+    import CheckmarkFilled from 'carbon-icons-svelte/lib/CheckmarkFilled.svelte';
+    import CircleDash from 'carbon-icons-svelte/lib/CircleDash.svelte';
+    import Close from 'carbon-icons-svelte/lib/Close.svelte';
+    import ErrorFilled from 'carbon-icons-svelte/lib/ErrorFilled.svelte';
     import LocationFilled from 'carbon-icons-svelte/lib/LocationFilled.svelte';
     let userLocationControl: UserLocationControl;
     let osType;
@@ -397,32 +401,103 @@
         });
     }
 
-    async function installApk() {
-        let result = false;
-        try {
-            result = await invoke('install_apk');
-        } catch (error) {
-            console.error(error);
+    // Runs a command to completion and hands back adb's exit code and output,
+    // unlike `spawn` which resolves as soon as the process starts.
+    async function run(cmd, args, cwd?) {
+        return Command.create(cmd, args, { cwd }).execute();
+    }
+
+    type TaskStepStatus = 'pending' | 'running' | 'done' | 'error';
+    type TaskStep = { label: string; command: string; status: TaskStepStatus; detail?: string };
+    type Task = { title: string; steps: TaskStep[]; running: boolean; summary?: string; failed?: boolean };
+
+    let task: Task = null;
+    let taskDismissTimer;
+    $: taskDoneCount = task ? task.steps.filter((s) => s.status === 'done' || s.status === 'error').length : 0;
+
+    function startTask(title: string, steps: { label: string; command: string }[]) {
+        clearTimeout(taskDismissTimer);
+        task = { title, running: true, steps: steps.map((s) => ({ ...s, status: 'pending' })) };
+    }
+    function updateStep(index: number, status: TaskStepStatus, detail?: string) {
+        if (!task) {
+            return;
         }
-        return result;
+        task.steps[index] = { ...task.steps[index], status, detail: detail || undefined };
+        task = task;
+    }
+    function finishTask() {
+        if (!task) {
+            return;
+        }
+        const failures = task.steps.filter((s) => s.status === 'error').length;
+        task.running = false;
+        task.failed = failures > 0;
+        task.summary = failures > 0 ? $_('task_failed', { values: { count: failures, total: task.steps.length } }) : $_('task_succeeded');
+        task = task;
+        if (!task.failed) {
+            // keep failures on screen; they are the ones worth reading
+            taskDismissTimer = setTimeout(() => (task = null), 4000);
+        }
+    }
+    // Runs every step even when one fails: with the APK missing every `pm grant`
+    // fails, and seeing the whole list is what tells you that is the problem.
+    async function runTask(title: string, steps: { label: string; command: string }[]) {
+        startTask(title, steps);
+        for (let index = 0; index < steps.length; index++) {
+            updateStep(index, 'running');
+            const [cmd, ...args] = steps[index].command.split(' ');
+            try {
+                const result = await run(cmd, args);
+                const output = (result.stderr || result.stdout || '').trim();
+                if (result.code === 0) {
+                    updateStep(index, 'done', output);
+                } else {
+                    updateStep(index, 'error', output || $_('task_exit_code', { values: { code: result.code } }));
+                }
+            } catch (error) {
+                updateStep(index, 'error', error?.message || String(error));
+            }
+        }
+        finishTask();
+    }
+
+    async function installApk() {
+        startTask($_('task_install_apk'), [{ label: $_('task_install_apk_step'), command: 'adb install <bundled apk>' }]);
+        updateStep(0, 'running');
+        try {
+            const output = await invoke<string>('install_apk');
+            updateStep(0, 'done', output);
+        } catch (error) {
+            updateStep(0, 'error', error?.message || String(error));
+        }
+        finishTask();
     }
     async function setupAdb() {
-        const commands = [
-            'adb shell pm grant io.appium.settings android.permission.READ_PHONE_STATE',
-            'adb shell pm grant io.appium.settings android.permission.WRITE_SETTINGS',
-            'adb shell pm grant io.appium.settings android.permission.ACCESS_FINE_LOCATION',
-            'adb shell pm grant io.appium.settings android.permission.ACCESS_FINE_LOCATION',
-            'adb shell pm grant io.appium.settings android.permission.ACCESS_COARSE_LOCATION',
-            'adb shell pm grant io.appium.settings android.permission.ACCESS_MOCK_LOCATION',
-            'adb shell pm grant io.appium.settings android.permission.SET_ANIMATION_SCALE',
-            'adb shell pm grant io.appium.settings android.permission.CHANGE_CONFIGURATION',
-            'adb shell am start -W -n io.appium.settings/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000',
-            'adb shell appops set io.appium.settings android:mock_location allow'
+        const permissions = [
+            'READ_PHONE_STATE',
+            'WRITE_SETTINGS',
+            'ACCESS_FINE_LOCATION',
+            'ACCESS_COARSE_LOCATION',
+            'ACCESS_MOCK_LOCATION',
+            'SET_ANIMATION_SCALE',
+            'CHANGE_CONFIGURATION'
         ];
-        for (let index = 0; index < commands.length; index++) {
-            const array = commands[index].split(' ');
-            await spawn(array[0], array.slice(1));
-        }
+        const steps = [
+            ...permissions.map((permission) => ({
+                label: $_('task_grant', { values: { permission } }),
+                command: `adb shell pm grant io.appium.settings android.permission.${permission}`
+            })),
+            {
+                label: $_('task_start_settings_app'),
+                command: 'adb shell am start -W -n io.appium.settings/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000'
+            },
+            {
+                label: $_('task_allow_mock_location'),
+                command: 'adb shell appops set io.appium.settings android:mock_location allow'
+            }
+        ];
+        return runTask($_('task_setup_adb'), steps);
     }
 
     const saveCurrentMockPosition = throttle((position) => {
@@ -496,7 +571,6 @@
         }
     }, 200);
     listen<string>('menu', ({ payload }) => {
-        // console.log('on menu', payload);
         switch (payload) {
             case 'setup':
                 setupAdb();
@@ -505,7 +579,21 @@
                 installApk();
                 break;
             case 'learn_more':
-                open(REPO_URL);
+                startTask($_('task_learn_more'), [{ label: REPO_URL, command: REPO_URL }]);
+                updateStep(0, 'running');
+                open(REPO_URL).then(
+                    () => {
+                        updateStep(0, 'done');
+                        finishTask();
+                    },
+                    (error) => {
+                        updateStep(0, 'error', error?.message || String(error));
+                        finishTask();
+                    }
+                );
+                break;
+            default:
+                console.warn('unhandled menu event', payload);
                 break;
         }
     });
@@ -598,6 +686,12 @@
                     <HeaderPanelDivider />
                     <Slider hideTextInput bind:value={$store.speedInKm} min={1} max={600} step={1} labelText={`${$_('speed')}:${$store.speedInKm} km/h`} />
                     <Slider hideTextInput bind:value={$store.keyRepeatSpeedMs} min={10} max={5000} step={1} labelText={`${$_('keyRepeatSpeedMs')}:${$store.keyRepeatSpeedMs} ms`} />
+                    <HeaderPanelDivider />
+                    <!-- same actions as the Simulator menu, reachable without it -->
+                    <div class="drawer-actions">
+                        <Button size="small" kind="tertiary" disabled={task?.running} on:click={installApk}>{$_('task_install_apk')}</Button>
+                        <Button size="small" kind="tertiary" disabled={task?.running} on:click={setupAdb}>{$_('task_setup_adb')}</Button>
+                    </div>
                 </div>
             </HeaderAction>
         </HeaderUtilities>
@@ -606,4 +700,167 @@
     <Content id="app-content">
         <div style:pointer-events="auto" class="mapfull" id="map" bind:this={mapContainer} style="align-self:flex-end;margin: 0px;" />
     </Content>
+
+    {#if task}
+        <div class="task-panel" class:failed={task.failed}>
+            <div class="task-header">
+                <span class="task-title">{task.title}</span>
+                <button class="task-close" type="button" aria-label={$_('task_dismiss')} on:click={() => (task = null)}>
+                    <Close size={16} />
+                </button>
+            </div>
+            <ProgressBar
+                size="sm"
+                labelText={`${taskDoneCount} / ${task.steps.length}`}
+                hideLabel={task.steps.length < 2}
+                max={task.steps.length}
+                value={taskDoneCount}
+                status={task.running ? 'active' : task.failed ? 'error' : 'finished'}
+            />
+            <ul class="task-steps">
+                {#each task.steps as step}
+                    <li class="task-step" class:is-error={step.status === 'error'}>
+                        <span class="task-step-icon">
+                            {#if step.status === 'done'}
+                                <CheckmarkFilled size={16} class="icon-done" />
+                            {:else if step.status === 'error'}
+                                <ErrorFilled size={16} class="icon-error" />
+                            {:else if step.status === 'running'}
+                                <span class="task-spinner" />
+                            {:else}
+                                <CircleDash size={16} class="icon-pending" />
+                            {/if}
+                        </span>
+                        <span class="task-step-body">
+                            <span class="task-step-label" title={step.command}>{step.label}</span>
+                            {#if step.detail}
+                                <span class="task-step-detail">{step.detail}</span>
+                            {/if}
+                        </span>
+                    </li>
+                {/each}
+            </ul>
+            {#if task.summary}
+                <div class="task-summary">{task.summary}</div>
+            {/if}
+        </div>
+    {/if}
 </div>
+
+<style lang="scss">
+    .drawer-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .task-panel {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 9000;
+        width: 380px;
+        max-width: calc(100vw - 32px);
+        padding: 12px 16px 14px;
+        background: #262626;
+        color: #f4f4f4;
+        border-left: 3px solid #0f62fe;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+        font-size: 12px;
+    }
+    .task-panel.failed {
+        border-left-color: #fa4d56;
+    }
+
+    .task-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+    .task-title {
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .task-close {
+        display: flex;
+        padding: 2px;
+        border: none;
+        background: none;
+        color: inherit;
+        cursor: pointer;
+    }
+
+    .task-steps {
+        max-height: 240px;
+        margin: 10px 0 0;
+        padding: 0;
+        overflow-y: auto;
+        list-style: none;
+    }
+    .task-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 3px 0;
+    }
+    .task-step-icon {
+        display: flex;
+        flex: 0 0 16px;
+        align-items: center;
+        height: 16px;
+    }
+    .task-step-body {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+    }
+    .task-step-label {
+        word-break: break-word;
+    }
+    .task-step-detail {
+        color: #c6c6c6;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .task-step.is-error .task-step-detail {
+        color: #ffb3b8;
+    }
+
+    .task-summary {
+        margin-top: 10px;
+        font-weight: 600;
+    }
+    .task-panel.failed .task-summary {
+        color: #ffb3b8;
+    }
+
+    .task-spinner {
+        width: 12px;
+        height: 12px;
+        margin: 2px;
+        border: 2px solid rgba(244, 244, 244, 0.25);
+        border-top-color: #f4f4f4;
+        border-radius: 50%;
+        animation: task-spin 0.8s linear infinite;
+    }
+    @keyframes task-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    :global(.task-step .icon-done) {
+        fill: #42be65;
+    }
+    :global(.task-step .icon-error) {
+        fill: #fa4d56;
+    }
+    :global(.task-step .icon-pending) {
+        fill: #8d8d8d;
+    }
+</style>
