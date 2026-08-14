@@ -8,3 +8,7 @@ package-lock.json
 /.vscode/settings.json
 /pnpm-global
 /pnpm-lock.yaml
+
+# Tauri v2 generated ACL schemas
+gen/schemas
+src-tauri/gen/schemas

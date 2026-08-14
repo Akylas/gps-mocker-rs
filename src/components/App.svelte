@@ -1,9 +1,10 @@
 <script lang="ts">
     import addressFormatter from '@fragaria/address-formatter';
     import MapLibreGlDirections, { LoadingIndicatorControl } from '@maplibre/maplibre-gl-directions';
-    import { invoke, os } from '@tauri-apps/api';
+    import { invoke } from '@tauri-apps/api/core';
     import { listen } from '@tauri-apps/api/event';
-    import { Command, open } from '@tauri-apps/api/shell';
+    import { type as osType_ } from '@tauri-apps/plugin-os';
+    import { Command, open } from '@tauri-apps/plugin-shell';
     import { Checkbox, Content, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput } from 'carbon-components-svelte';
     import { KeyboardKeyHold } from 'hold-event';
     import { RulerControl } from 'mapbox-gl-controls';
@@ -19,15 +20,15 @@
     let osType;
     async function getOs() {
         if (!osType) {
-            const value = await os.type();
+            const value = osType_();
             switch (value) {
-                case 'Linux':
+                case 'linux':
                     osType = 'linux';
                     break;
-                case 'Windows_NT':
+                case 'windows':
                     osType = 'windows';
                     break;
-                case 'Darwin':
+                case 'macos':
                     osType = 'darwin';
                     break;
                 default:
@@ -240,6 +241,7 @@
             userLocationControl = new UserLocationControl({ trackUserLocation: true });
             map.addControl(userLocationControl);
             map.on('click', function (e) {
+                console.log('click', shouldMoveOnClick, !directionsMode);
                 if (shouldMoveOnClick && !directionsMode) {
                     setPosition({ lat: e.lngLat.lat, lon: e.lngLat.lng });
                 }
@@ -378,13 +380,13 @@
         //     { capture: true }
     );
     async function spawn(cmd, args, cwd?) {
-        const command = new Command(cmd, args, { cwd: cwd });
+        const command = Command.create(cmd, args, { cwd: cwd });
         command.on('error', (error) => console.error(`command error: "${error}"`));
         return command.spawn();
     }
     async function exec(cmd, args, cwd?) {
         return new Promise<string>((resolve, reject) => {
-            const command = new Command(cmd, args, { cwd: cwd });
+            const command = Command.create(cmd, args, { cwd: cwd });
             let result = '';
             command.on('error', reject);
             command.stdout.on('data', (line) => (result += line));
@@ -493,7 +495,7 @@
             console.error(error);
         }
     }, 200);
-    listen<string>('tauri://menu', ({ payload }) => {
+    listen<string>('menu', ({ payload }) => {
         // console.log('on menu', payload);
         switch (payload) {
             case 'setup':

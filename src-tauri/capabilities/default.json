@@ -1,0 +1,37 @@
+{
+  "identifier": "default",
+  "description": "default capability for the main window",
+  "local": true,
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "args": true,
+          "cmd": "xcrun",
+          "name": "xcrun",
+          "sidecar": false
+        },
+        {
+          "args": true,
+          "cmd": "adb",
+          "name": "adb",
+          "sidecar": false
+        }
+      ]
+    },
+    "shell:allow-open",
+    "os:allow-platform",
+    "os:allow-version",
+    "os:allow-os-type",
+    "os:allow-family",
+    "os:allow-arch",
+    "os:allow-exe-extension",
+    "os:allow-locale",
+    "os:allow-hostname"
+  ]
+}
