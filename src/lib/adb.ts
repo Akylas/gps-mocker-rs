@@ -132,80 +132,59 @@ export async function resolveSerials(target: AdbTarget): Promise<string[]> {
     return resolveTargets(target, await listDevices());
 }
 
+/** Our own Android build. It is the helper now; nothing third-party is involved. */
+export const HELPER_PACKAGE = 'com.akylas.gpsmocker';
+const CONTROL_RECEIVER = `${HELPER_PACKAGE}/com.akylas.gpsmocker.mocklocation.MockControlReceiver`;
+const ACTION_SET_LOCATION = 'com.akylas.gpsmocker.mocklocation.SET_LOCATION';
+const ACTION_ACQUIRE = 'com.akylas.gpsmocker.mocklocation.ACQUIRE';
+const ACTION_STOP = 'com.akylas.gpsmocker.mocklocation.STOP';
+
 /**
- * The helper app's notification channel, which is IMPORTANCE_DEFAULT with a
- * sound attached. Its LocationService promotes itself to the foreground on
- * every start, so the chime cannot be avoided from this side — only the user
- * can quieten the channel, and there is no adb command that sets its
- * importance. This deep-links to the exact page where they can.
+ * FLAG_INCLUDE_STOPPED_PACKAGES.
+ *
+ * A package sits in Android's *stopped* state after a fresh install it has
+ * never been launched from, and after any force-stop — including the ones an
+ * OEM battery manager does on its own. A broadcast carrying this flag is
+ * delivered anyway and clears the flag, which is why the control surface is a
+ * receiver: recovering never means putting an activity on screen and
+ * interrupting the app under test.
  */
-export async function openHelperNotificationSettings(target: AdbTarget) {
-    const serials = await resolveSerials(target);
-    await Promise.all(
-        serials.map((serial) =>
-            Command.create('adb', [
-                '-s',
-                serial,
-                'shell',
-                'am',
-                'start',
-                '-a',
-                'android.settings.CHANNEL_NOTIFICATION_SETTINGS',
-                '-e',
-                'android.provider.extra.APP_PACKAGE',
-                HELPER_PACKAGE,
-                '-e',
-                'android.provider.extra.CHANNEL_ID',
-                HELPER_CHANNEL
-            ]).execute()
-        )
-    );
+const INCLUDE_STOPPED = '0x00000020';
+
+function broadcast(serial: string, action: string, extras: string[] = []) {
+    return Command.create('adb', ['-s', serial, 'shell', 'am', 'broadcast', '-a', action, '-n', CONTROL_RECEIVER, '-f', INCLUDE_STOPPED, ...extras]).execute();
 }
 
-export const HELPER_PACKAGE = 'io.appium.settings';
-const HELPER_CHANNEL = 'main_channel';
-
 /**
- * What `am` says when the target package is in Android's *stopped* state.
+ * Everything the app needs to mock, applied over adb with nothing shown on the
+ * device.
  *
- * A package is stopped after a fresh install it has never been launched from,
- * and after any force-stop. Nothing is delivered to it in that state, so an
- * explicit service start cannot resolve the component — and
- * FLAG_INCLUDE_STOPPED_PACKAGES does not lift it for a service.
+ * The location permission is a runtime one and a foreground service of type
+ * `location` may not start without it; mock_location is an app op with no
+ * runtime prompt at all; and the battery exemption is what lets a broadcast
+ * start that service while the app is in the background.
  */
-const STOPPED_PACKAGE = /Not found; no service started/i;
+export function setupCommands(serial: string): { labelKey: string; command: string }[] {
+    const adb = `adb -s ${serial}`;
+    return [
+        { labelKey: 'task_grant_location', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.ACCESS_FINE_LOCATION` },
+        { labelKey: 'task_grant_coarse_location', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.ACCESS_COARSE_LOCATION` },
+        // without this the location-type foreground service cannot start while
+        // the app is in the background, which is the only state it is ever in
+        // when a desktop is driving it
+        { labelKey: 'task_grant_background_location', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.ACCESS_BACKGROUND_LOCATION` },
+        { labelKey: 'task_grant_notifications', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.POST_NOTIFICATIONS` },
+        { labelKey: 'task_allow_mock_location', command: `${adb} shell appops set ${HELPER_PACKAGE} android:mock_location allow` },
+        { labelKey: 'task_exempt_battery', command: `${adb} shell dumpsys deviceidle whitelist +${HELPER_PACKAGE}` },
+        { labelKey: 'task_allow_background', command: `${adb} shell cmd appops set ${HELPER_PACKAGE} RUN_ANY_IN_BACKGROUND allow` },
+        { labelKey: 'task_claim_providers', command: `${adb} shell am broadcast -a ${ACTION_ACQUIRE} -n ${CONTROL_RECEIVER} -f ${INCLUDE_STOPPED}` }
+    ];
+}
 
-/**
- * Clears the stopped state the only way that works.
- *
- * Nothing quieter revives a force-stopped app: `pm unstop` clears the flag but
- * the service still will not resolve, and no service of the helper's own can
- * start its process either. Only launching its activity does, and that takes
- * over the screen.
- *
- * Which is why this is never called from the push path. It interrupts whatever
- * app is being tested, and restarting the helper re-registers the test provider
- * — which silently drops any location listener that app had running, so it
- * stops receiving updates until it re-subscribes. Waking mid-drive costs the
- * user the very restart it was trying to save them.
- */
-export async function wakeHelper(serial: string) {
-    await Command.create('adb', [
-        '-s',
-        serial,
-        'shell',
-        'am',
-        'start',
-        '-W',
-        '-n',
-        `${HELPER_PACKAGE}/.Settings`,
-        '-a',
-        'android.intent.action.MAIN',
-        '-c',
-        'android.intent.category.LAUNCHER',
-        '-f',
-        '0x10200000'
-    ]).execute();
+/** Releases the test providers and stops the service on the device. */
+export async function stopMockingOnDevice(target: AdbTarget) {
+    const serials = await resolveSerials(target);
+    await Promise.all(serials.map((serial) => broadcast(serial, ACTION_STOP)));
 }
 
 /**
@@ -219,49 +198,34 @@ export async function sendLocation(position: Position, target: AdbTarget) {
 
     await Promise.all(
         serials.map(async (serial) => {
-            const reported = await pushOnce(serial, position);
-            if (!reported) {
-                return;
+            // Coordinates go as strings: `am` only offers `--ef`, and a float
+            // holds about seven significant digits, which is not enough for a
+            // degree with six decimals.
+            const extras = ['--es', 'lat', String(position.lat), '--es', 'lon', String(position.lon)];
+            if (position.ele !== undefined) {
+                extras.push('--es', 'altitude', String(position.ele));
             }
-            // Say what to do rather than doing it: reviving the helper means
-            // pulling it onto the screen and restarting its provider, which is
-            // the user's call to make between runs, not ours to make mid-drive.
-            if (STOPPED_PACKAGE.test(reported)) {
-                throw new Error(`${serial}: the helper app has been stopped — run “Setup Android device” to restart it`);
+
+            const result = await broadcast(serial, ACTION_SET_LOCATION, extras);
+
+            if (result.code !== 0) {
+                throw new Error(`${serial}: ${result.stderr.trim() || `adb exited with ${result.code}`}`);
             }
-            throw new Error(`${serial}: ${reported}`);
+
+            // `am` reports its own failures on stdout and still exits 0, so the
+            // exit code alone would let a silently dropped fix look like success
+            const line = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).find((candidate) => /^\s*(Error|Exception)\b/i.test(candidate));
+            if (line) {
+                throw new Error(`${serial}: ${line.trim()}`);
+            }
+
+            // A broadcast that no receiver handled still "completes", so the
+            // result code is the only sign the app is not installed.
+            if (/result=0/.test(result.stdout) === false && /Broadcast completed/.test(result.stdout) === false) {
+                throw new Error(`${serial}: the GPS Mocker app did not answer — install it and run Setup`);
+            }
         })
     );
-}
-
-/** Returns the failure `am` reported, or undefined when the fix landed. */
-async function pushOnce(serial: string, position: Position): Promise<string | undefined> {
-    const result = await Command.create('adb', [
-        '-s',
-        serial,
-        'shell',
-        'am',
-        // not `startservice`: since API 26 that is refused for a backgrounded
-        // app with "app is in background uid null", which is exactly the state
-        // the helper is in while another app is in front
-        'start-foreground-service',
-        '-e',
-        'longitude',
-        String(position.lon),
-        '-e',
-        'latitude',
-        String(position.lat),
-        `${HELPER_PACKAGE}/.LocationService`
-    ]).execute();
-
-    if (result.code !== 0) {
-        return result.stderr.trim() || `adb exited with ${result.code}`;
-    }
-
-    // `am` reports its own failures on stdout and still exits 0, so the exit
-    // code alone would let a silently dropped fix look like success
-    const line = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).find((candidate) => /^\s*(Error|Exception)\b/i.test(candidate));
-    return line?.trim();
 }
 
 function current(): AdbDevice[] {

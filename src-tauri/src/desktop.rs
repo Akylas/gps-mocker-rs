@@ -8,18 +8,22 @@ use std::process::Command;
 #[cfg(target_os = "macos")]
 use tauri::menu::AboutMetadata;
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::path::BaseDirectory;
-use tauri::{Manager, Runtime};
+use tauri::Runtime;
 
 // Returns adb's own output so the webview can show what actually happened,
 // instead of a bare boolean. Runs off the main thread: `adb install` takes
 // seconds and would otherwise freeze the UI that reports on it.
+/// Installs the Android build of this app onto a device.
+///
+/// The APK is chosen by the user rather than bundled: it is this same project
+/// built for Android, so shipping a copy inside the desktop binary would mean
+/// committing a large artifact that goes stale on every release.
 #[tauri::command]
-pub async fn install_apk(handle: tauri::AppHandle, serial: Option<String>) -> Result<String, String> {
-  let resource_path = handle
-    .path()
-    .resolve("settings_apk-debug.apk", BaseDirectory::Resource)
-    .map_err(|e| format!("failed to resolve the bundled APK: {}", e))?;
+pub async fn install_apk(serial: Option<String>, apk_path: String) -> Result<String, String> {
+  let resource_path = std::path::PathBuf::from(apk_path);
+  if !resource_path.is_file() {
+    return Err(format!("no APK at {}", resource_path.display()));
+  }
 
   tauri::async_runtime::spawn_blocking(move || {
     let mut command = Command::new("adb");

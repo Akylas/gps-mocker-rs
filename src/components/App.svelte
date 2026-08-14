@@ -55,7 +55,7 @@
     import Button from './ui/Button.svelte';
     import { resolvedTheme, setThemePreference, type ThemePreference } from '../lib/theme';
     import { followSystemBars } from '../lib/systemBars';
-    import { adbDevices, HELPER_PACKAGE, openHelperNotificationSettings, refreshDevices, resolveSerials, sendLocation, wakeHelper, type AdbDevice } from '../lib/adb';
+    import { adbDevices, refreshDevices, resolveSerials, sendLocation, setupCommands, type AdbDevice } from '../lib/adb';
 
     /* ---------------------------------------------------------------- *
      * platform + settings                                              *
@@ -1210,23 +1210,32 @@
         finish();
     }
 
+    /**
+     * Installs the Android build of this app onto the target, then configures
+     * it. It is the mock provider now — there is no third-party helper.
+     */
     async function installApk() {
-        startTask($_('task_install_apk'), [{ label: $_('task_install_apk_step'), command: 'adb install <bundled apk>' }]);
+        startTask($_('task_install_apk'), [{ label: $_('task_install_apk_step') }]);
         updateStep(0, 'running');
         try {
+            const apk = await openDialog({ multiple: false, filters: [{ name: 'APK', extensions: ['apk'] }] });
+            if (!apk) {
+                dismissTask();
+                return;
+            }
             const serials = await resolveSerials($store.adbTarget);
             for (const serial of serials) {
-                const output = await invoke<string>('install_apk', { serial });
-                // a package that has never been launched sits in Android's
-                // stopped state, where no service start resolves; launching it
-                // once here means the very first fix works
-                await wakeHelper(serial);
-                updateStep(0, 'done', output);
+                updateStep(0, 'done', await invoke<string>('install_apk', { serial, apkPath: apk as string }));
             }
         } catch (error) {
             updateStep(0, 'error', errorMessage(error));
+            finish();
+            return;
         }
         finish();
+        // a fresh install has no permissions and no app op; without this the
+        // first fix would just fail
+        await setupAdb();
     }
 
     async function setupAdb() {
@@ -1242,59 +1251,13 @@
             return;
         }
 
-        const permissions = ['READ_PHONE_STATE', 'WRITE_SETTINGS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_MOCK_LOCATION', 'SET_ANIMATION_SCALE', 'CHANGE_CONFIGURATION'];
-
+        // nothing here opens anything on the device
         const steps = serials.flatMap((serial) => {
-            const adb = `adb -s ${serial}`;
             const on = serials.length > 1 ? ` (${serial})` : '';
-            return [
-                ...permissions.map((permission) => ({
-                    label: $_('task_grant', { values: { permission } }) + on,
-                    command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.${permission}`
-                })),
-                {
-                    label: $_('task_start_settings_app') + on,
-                    command: `${adb} shell am start -W -n ${HELPER_PACKAGE}/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000`
-                },
-                {
-                    label: $_('task_allow_mock_location') + on,
-                    command: `${adb} shell appops set ${HELPER_PACKAGE} android:mock_location allow`
-                },
-                // Doze and the background-service limits are what force-stop the
-                // helper mid-route. Recovering from that means pulling it onto
-                // the screen and restarting its provider, which drops the
-                // location listener in whatever app is being tested — so it is
-                // far better not to let it be stopped at all.
-                {
-                    label: $_('task_exempt_battery') + on,
-                    command: `${adb} shell dumpsys deviceidle whitelist +${HELPER_PACKAGE}`
-                },
-                {
-                    label: $_('task_allow_background') + on,
-                    command: `${adb} shell cmd appops set ${HELPER_PACKAGE} RUN_ANY_IN_BACKGROUND allow`
-                }
-            ];
+            return setupCommands(serial).map(({ labelKey, command }) => ({ label: $_(labelKey) + on, command }));
         });
 
         return runTask($_('task_setup_adb'), steps);
-    }
-
-    /**
-     * The helper chimes on every position because its own notification channel
-     * carries a sound and its service re-posts on each start. Nothing on this
-     * side can change a channel's importance, so this opens the one screen
-     * where it can be set to Silent.
-     */
-    async function silenceHelperNotifications() {
-        startTask($_('task_silence_helper'), [{ label: $_('task_silence_helper_step') }]);
-        updateStep(0, 'running');
-        try {
-            await openHelperNotificationSettings($store.adbTarget);
-            updateStep(0, 'done', $_('task_silence_helper_hint'));
-        } catch (error) {
-            updateStep(0, 'error', errorMessage(error));
-        }
-        finish();
     }
 
     /* ---------------------------------------------------------------- *
@@ -1597,7 +1560,6 @@
                 {resetCostingValues}
                 {installApk}
                 {setupAdb}
-                {silenceHelperNotifications}
                 onMockError={reportMockError}
                 adbDevices={$adbDevices}
                 refreshAdbDevices={refreshDevices}
@@ -1751,7 +1713,6 @@
                 {resetCostingValues}
                 {installApk}
                 {setupAdb}
-                {silenceHelperNotifications}
                 onMockError={reportMockError}
                 adbDevices={$adbDevices}
                 refreshAdbDevices={refreshDevices}

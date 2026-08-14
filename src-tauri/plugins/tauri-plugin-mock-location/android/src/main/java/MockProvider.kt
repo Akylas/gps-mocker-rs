@@ -71,9 +71,19 @@ class MockProvider(private val context: Context) {
         if (active) return true
         try {
             for (provider in providers) {
-                // a stale registration survives a crash, and addTestProvider
-                // throws on a name that is already registered
-                runCatching { locationManager.removeTestProvider(provider) }
+                // A registration outlives the process that made it, so after a
+                // force-stop or a low-memory kill it is still there. Reuse it:
+                // removing and re-adding drops the location listener in
+                // whatever app is being tested, which is the whole failure this
+                // is meant to avoid. setTestProviderEnabled only succeeds on a
+                // provider that is already registered, so it doubles as the
+                // check.
+                if (runCatching { locationManager.setTestProviderEnabled(provider, true) }.isSuccess) {
+                    Log.i(TAG, "reusing the existing test provider $provider")
+                    continue
+                }
+
+                Log.i(TAG, "registering test provider $provider")
                 @Suppress("DEPRECATION")
                 locationManager.addTestProvider(
                     provider,

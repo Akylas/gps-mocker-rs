@@ -34,7 +34,6 @@
     export let resetCostingValues: () => void;
     export let installApk: () => void;
     export let setupAdb: () => void;
-    export let silenceHelperNotifications: () => void;
     export let onMockError: (error: unknown) => void;
     export let refreshAdbDevices: () => void;
     export let adbDevices: AdbDevice[] = [];
@@ -182,9 +181,6 @@
         <div class="actions">
             <Button size="small" disabled={busy} on:click={installApk}>{$_('task_install_apk')}</Button>
             <Button size="small" disabled={busy} on:click={setupAdb}>{$_('task_setup_adb')}</Button>
-            <!-- the helper's notification channel carries a sound and its
-                 service re-posts on every fix; only the user can quieten it -->
-            <Button size="small" disabled={busy} on:click={silenceHelperNotifications}>{$_('task_silence_helper')}</Button>
         </div>
     </Section>
 {/if}
