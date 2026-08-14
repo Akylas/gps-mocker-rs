@@ -21,6 +21,8 @@ tauri = { version = "2", features = [] }
 tauri-plugin-window-state = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-os = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 openssl = "0.10.42"
 
 [target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies.rusty_libimobiledevice]

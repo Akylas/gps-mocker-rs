@@ -187,6 +187,8 @@ fn main() {
     .plugin(tauri_plugin_window_state::Builder::default().build())
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_os::init())
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
       install_apk,
       send_location_to_simulators,
@@ -211,7 +213,60 @@ fn main() {
         menu = menu.item(&app_menu);
       }
 
-      let file_menu = SubmenuBuilder::new(handle, "File").close_window().build()?;
+      let file_menu = SubmenuBuilder::new(handle, "File")
+        .item(
+          &MenuItemBuilder::with_id("import_gpx", "Import GPX…")
+            .accelerator("CmdOrCtrl+O")
+            .build(handle)?,
+        )
+        .item(
+          &MenuItemBuilder::with_id("save_route", "Save Route")
+            .accelerator("CmdOrCtrl+S")
+            .build(handle)?,
+        )
+        .item(
+          &MenuItemBuilder::with_id("saved_routes", "Saved Routes…")
+            .accelerator("CmdOrCtrl+L")
+            .build(handle)?,
+        )
+        .item(
+          &MenuItemBuilder::with_id("export_gpx", "Export Route as GPX…")
+            .accelerator("CmdOrCtrl+Shift+S")
+            .build(handle)?,
+        )
+        .separator()
+        .close_window()
+        .build()?;
+
+      let route_menu = SubmenuBuilder::new(handle, "Route")
+        // no accelerator: the webview binds Space, which as a menu accelerator
+        // would fire even while typing in the search field
+        .item(&MenuItemBuilder::with_id("play_pause", "Play / Pause").build(handle)?)
+        .item(
+          &MenuItemBuilder::with_id("stop_playback", "Stop")
+            .accelerator("CmdOrCtrl+.")
+            .build(handle)?,
+        )
+        .item(
+          &MenuItemBuilder::with_id("restart_playback", "Restart")
+            .accelerator("CmdOrCtrl+R")
+            .build(handle)?,
+        )
+        .separator()
+        .item(
+          &MenuItemBuilder::with_id("build_route", "Build Route from Waypoints")
+            .accelerator("CmdOrCtrl+B")
+            .build(handle)?,
+        )
+        .item(
+          &MenuItemBuilder::with_id("compute_maneuvers", "Compute Maneuvers (Valhalla)")
+            .accelerator("CmdOrCtrl+M")
+            .build(handle)?,
+        )
+        .item(&MenuItemBuilder::with_id("fit_route", "Zoom to Route").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("clear_route", "Clear Route").build(handle)?)
+        .build()?;
 
       let view_menu = {
         let builder = SubmenuBuilder::new(handle, "View");
@@ -238,6 +293,7 @@ fn main() {
 
       menu
         .item(&file_menu)
+        .item(&route_menu)
         .item(&view_menu)
         .item(&window_menu)
         .item(&simulator_menu)
