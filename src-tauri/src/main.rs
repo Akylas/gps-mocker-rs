@@ -238,6 +238,19 @@ fn main() {
         .close_window()
         .build()?;
 
+      // macOS routes Cmd+X/C/V/A and Cmd+Z through the Edit menu: without these
+      // items the webview gets no editing shortcuts at all, so text fields
+      // cannot be copied into or pasted from.
+      let edit_menu = SubmenuBuilder::new(handle, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
       let route_menu = SubmenuBuilder::new(handle, "Route")
         // no accelerator: the webview binds Space, which as a menu accelerator
         // would fire even while typing in the search field
@@ -293,6 +306,7 @@ fn main() {
 
       menu
         .item(&file_menu)
+        .item(&edit_menu)
         .item(&route_menu)
         .item(&view_menu)
         .item(&window_menu)

@@ -126,7 +126,8 @@
         position: fixed;
         top: 60px;
         left: 16px;
-        z-index: 8400;
+        /* keep below the header panel, same reason as the transport bar */
+        z-index: 7400;
         width: 300px;
         max-width: calc(100vw - 32px);
         background: rgba(38, 38, 38, 0.96);

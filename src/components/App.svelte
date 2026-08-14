@@ -1533,7 +1533,9 @@
         position: fixed;
         left: 50%;
         bottom: 16px;
-        z-index: 8500;
+        /* below the header panel (8000): the settings drawer overlaps the right
+           end of this bar, and whichever sits on top eats the clicks */
+        z-index: 7500;
         display: flex;
         width: min(880px, calc(100vw - 32px));
         flex-direction: column;

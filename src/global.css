@@ -203,3 +203,11 @@ video {
 #app-content {
   padding: 0px !important;
 }
+/* Carbon leaves the modal's full-screen backdrop in the DOM after it closes.
+   Our build renders it at opacity 0 but still visible and hit-testable at
+   z-index 9000, so once Saved Routes had been opened, every later click
+   anywhere in the app landed on the invisible backdrop instead. */
+.bx--modal:not(.is-visible) {
+  visibility: hidden;
+  pointer-events: none;
+}
