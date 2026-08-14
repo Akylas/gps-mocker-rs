@@ -14,7 +14,7 @@ export interface Maneuver {
     length?: number;
 }
 
-export type RouteSource = 'gpx' | 'valhalla';
+export type RouteSource = 'gpx' | 'geojson' | 'valhalla';
 
 export interface Route {
     id: string;
@@ -65,16 +65,27 @@ export function decimate(points: Position[], minGap: number): Position[] {
     return result;
 }
 
-/** Drops consecutive duplicates, which break bearing and projection maths. */
-function dedupe(points: Position[]): Position[] {
-    const result: Position[] = [];
-    for (const point of points) {
-        const previous = result[result.length - 1];
-        if (!previous || distance(previous, point) > 0.05) {
-            result.push(point);
+/**
+ * Which points survive deduplication, as indices into `points`.
+ *
+ * Exposed so a caller carrying annotations indexed against the raw shape —
+ * an importer with turn-by-turn instructions, say — can move them onto the
+ * route `buildRoute` actually produces.
+ */
+export function keptIndices(points: Position[]): number[] {
+    const kept: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+        const previous = kept.length > 0 ? points[kept[kept.length - 1]] : undefined;
+        if (!previous || distance(previous, points[i]) > 0.05) {
+            kept.push(i);
         }
     }
-    return result;
+    return kept;
+}
+
+/** Drops consecutive duplicates, which break bearing and projection maths. */
+function dedupe(points: Position[]): Position[] {
+    return keptIndices(points).map((index) => points[index]);
 }
 
 export function buildRoute(input: {

@@ -236,13 +236,21 @@ export async function stopMockingOnDevice(target: AdbTarget) {
     await Promise.all(serials.map((serial) => broadcast(serial, ACTION_STOP)));
 }
 
+/** What the fix was doing, when the caller knows. */
+export interface Motion {
+    /** degrees clockwise from north */
+    bearing?: number;
+    /** ground speed in km/h; Android wants metres per second */
+    speedKmh?: number;
+}
+
 /**
  * Pushes one fix to every resolved target.
  *
  * Throws rather than logging: the caller decides how loudly to complain, which
  * matters because this runs on every playback tick.
  */
-export async function sendLocation(position: Position, target: AdbTarget) {
+export async function sendLocation(position: Position, target: AdbTarget, motion: Motion = {}) {
     const serials = resolveTargets(target, await listDevices());
 
     await Promise.all(
@@ -253,6 +261,16 @@ export async function sendLocation(position: Position, target: AdbTarget) {
             const extras = ['--es', 'lat', String(position.lat), '--es', 'lon', String(position.lon)];
             if (position.ele !== undefined) {
                 extras.push('--es', 'altitude', String(position.ele));
+            }
+            // A navigation app under test orients itself from the bearing, and
+            // a Location that carries none reads as standing still facing
+            // north. Both are left out rather than faked when the fix is a map
+            // tap, so a consumer can tell the difference.
+            if (motion.bearing !== undefined) {
+                extras.push('--es', 'bearing', String(((motion.bearing % 360) + 360) % 360));
+            }
+            if (motion.speedKmh !== undefined) {
+                extras.push('--es', 'speed', String(motion.speedKmh / 3.6));
             }
 
             const result = await broadcast(serial, ACTION_SET_LOCATION, extras);

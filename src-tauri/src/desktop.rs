@@ -369,7 +369,8 @@ pub fn build_menu<R: Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Men
 
   let file_menu = SubmenuBuilder::new(handle, "File")
     .item(
-      &MenuItemBuilder::with_id("import_gpx", "Import GPX…")
+      // the id stays: the webview still routes it to the one importer
+      &MenuItemBuilder::with_id("import_gpx", "Import Route…")
         .accelerator("CmdOrCtrl+O")
         .build(handle)?,
     )
