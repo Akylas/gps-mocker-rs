@@ -183,8 +183,14 @@ video {
 }
 
 .bx--header-panel--expanded {
-  background-color:#000000aa !important;
-  width: 18rem !important;
+  background-color:#000000dd !important;
+  /* the settings list is far taller than the panel's own height rule allows */
+  height: calc(100vh - 3rem) !important;
+  overflow-y: auto !important;
+  width: 21rem !important;
+}
+.drawer-content {
+  padding: 12px 16px 40px;
 }
 .bx--header {
   background-color:#000000aa !important;
@@ -196,4 +202,12 @@ video {
 
 #app-content {
   padding: 0px !important;
+}
+/* Carbon leaves the modal's full-screen backdrop in the DOM after it closes.
+   Our build renders it at opacity 0 but still visible and hit-testable at
+   z-index 9000, so once Saved Routes had been opened, every later click
+   anywhere in the app landed on the invisible backdrop instead. */
+.bx--modal:not(.is-visible) {
+  visibility: hidden;
+  pointer-events: none;
 }
