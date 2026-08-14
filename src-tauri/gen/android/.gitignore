@@ -15,6 +15,9 @@ build
 local.properties
 key.properties
 keystore.properties
+# the release workflow decodes the signing key here
+*.keystore
+*.jks
 
 /.tauri
 /tauri.settings.gradle

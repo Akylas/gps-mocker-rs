@@ -55,7 +55,7 @@
     import Button from './ui/Button.svelte';
     import { resolvedTheme, setThemePreference, type ThemePreference } from '../lib/theme';
     import { followSystemBars } from '../lib/systemBars';
-    import { adbDevices, HELPER_PACKAGE, openHelperNotificationSettings, refreshDevices, resolveSerials, sendLocation, wakeHelper, type AdbDevice } from '../lib/adb';
+    import { adbDevices, checkReadiness, refreshDevices, resolveSerials, sendLocation, setupCommands, type AdbDevice } from '../lib/adb';
 
     /* ---------------------------------------------------------------- *
      * platform + settings                                              *
@@ -1210,78 +1210,133 @@
         finish();
     }
 
-    async function installApk() {
-        startTask($_('task_install_apk'), [{ label: $_('task_install_apk_step'), command: 'adb install <bundled apk>' }]);
-        updateStep(0, 'running');
+    /** What the target device still needs, shown next to the Prepare button. */
+    let deviceReadiness: string | undefined;
+
+    async function refreshReadiness() {
+        deviceReadiness = undefined;
         try {
             const serials = await resolveSerials($store.adbTarget);
-            for (const serial of serials) {
-                const output = await invoke<string>('install_apk', { serial });
-                // a package that has never been launched sits in Android's
-                // stopped state, where no service start resolves; launching it
-                // once here means the very first fix works
-                await wakeHelper(serial);
-                updateStep(0, 'done', output);
-            }
+            const results = await Promise.all(serials.map(async (serial) => ({ serial, readiness: await checkReadiness(serial) })));
+            const blocked = results.filter((entry) => !entry.readiness.ready);
+            deviceReadiness = blocked.length === 0 ? $_('device_ready') : blocked.map(({ serial, readiness }) => (serials.length > 1 ? `${serial}: ` : '') + (readiness as any).detail).join(' · ');
         } catch (error) {
-            updateStep(0, 'error', errorMessage(error));
+            deviceReadiness = errorMessage(error);
         }
-        finish();
     }
 
-    async function setupAdb() {
-        // every step is pinned to a serial for the same reason the position
-        // push is: adb refuses a bare command once two devices are attached
+    /**
+     * One action instead of two buttons: look at what the device is missing and
+     * fix exactly that.
+     *
+     * Installing is only offered when the app is genuinely absent, so the usual
+     * case — an app that is there but was never granted anything — never asks
+     * for an APK at all.
+     */
+    async function prepareDevice() {
         let serials: string[];
         try {
             serials = await resolveSerials($store.adbTarget);
         } catch (error) {
-            startTask($_('task_setup_adb'), [{ label: errorMessage(error) }]);
+            startTask($_('task_prepare_device'), [{ label: errorMessage(error) }]);
             updateStep(0, 'error', errorMessage(error));
             finish();
             return;
         }
 
-        const permissions = ['READ_PHONE_STATE', 'WRITE_SETTINGS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_MOCK_LOCATION', 'SET_ANIMATION_SCALE', 'CHANGE_CONFIGURATION'];
-
-        const steps = serials.flatMap((serial) => {
-            const adb = `adb -s ${serial}`;
+        for (const serial of serials) {
             const on = serials.length > 1 ? ` (${serial})` : '';
-            return [
-                ...permissions.map((permission) => ({
-                    label: $_('task_grant', { values: { permission } }) + on,
-                    command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.${permission}`
-                })),
-                {
-                    label: $_('task_start_settings_app') + on,
-                    command: `${adb} shell am start -W -n ${HELPER_PACKAGE}/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000`
-                },
-                {
-                    label: $_('task_allow_mock_location') + on,
-                    command: `${adb} shell appops set ${HELPER_PACKAGE} android:mock_location allow`
-                }
+            const readiness = await checkReadiness(serial);
+
+            if (readiness.ready) {
+                startTask($_('task_prepare_device'), [{ label: $_('device_ready') + on }]);
+                updateStep(0, 'done');
+                finish();
+                continue;
+            }
+
+            const needsInstall = readiness.reason === 'not-installed';
+            const steps = [
+                ...(needsInstall ? [{ label: $_('task_fetch_apk_step') + on }, { label: $_('task_install_apk_step') + on }] : []),
+                ...setupCommands(serial).map(({ labelKey, command }) => ({ label: $_(labelKey) + on, command })),
+                { label: $_('task_verify_device') + on }
             ];
-        });
+            startTask($_('task_prepare_device'), steps);
 
-        return runTask($_('task_setup_adb'), steps);
-    }
+            let index = 0;
+            if (needsInstall) {
+                // The Android build is published alongside this desktop one, so
+                // there is nothing for the user to find. It is only fetched the
+                // first time; after that the copy on disk is used and preparing
+                // a device works with no network at all.
+                updateStep(index, 'running');
+                let apkPath: string;
+                let fromCache = false;
+                try {
+                    const apk = await invoke<{ path: string; tag: string; downloaded: boolean }>('ensure_helper_apk', { force: false });
+                    apkPath = apk.path;
+                    fromCache = !apk.downloaded;
+                    updateStep(index, 'done', $_(apk.downloaded ? 'apk_downloaded' : 'apk_cached', { values: { tag: apk.tag } }));
+                } catch (error) {
+                    // a development build has no release to fetch from, so fall
+                    // back to an APK the user built themselves
+                    const picked = await openDialog({ multiple: false, filters: [{ name: 'APK', extensions: ['apk'] }] });
+                    if (!picked) {
+                        updateStep(index, 'error', errorMessage(error));
+                        finish();
+                        return;
+                    }
+                    apkPath = picked as string;
+                    updateStep(index, 'done', $_('apk_from_file', { values: { error: errorMessage(error) } }));
+                }
+                index += 1;
 
-    /**
-     * The helper chimes on every position because its own notification channel
-     * carries a sound and its service re-posts on each start. Nothing on this
-     * side can change a channel's importance, so this opens the one screen
-     * where it can be set to Silent.
-     */
-    async function silenceHelperNotifications() {
-        startTask($_('task_silence_helper'), [{ label: $_('task_silence_helper_step') }]);
-        updateStep(0, 'running');
-        try {
-            await openHelperNotificationSettings($store.adbTarget);
-            updateStep(0, 'done', $_('task_silence_helper_hint'));
-        } catch (error) {
-            updateStep(0, 'error', errorMessage(error));
+                updateStep(index, 'running');
+                try {
+                    updateStep(index, 'done', await invoke<string>('install_apk', { serial, apkPath }));
+                } catch (error) {
+                    // A cached APK that will not install is worth fetching once
+                    // more: the release it came from may have been replaced.
+                    let recovered = false;
+                    if (fromCache) {
+                        try {
+                            const fresh = await invoke<{ path: string }>('ensure_helper_apk', { force: true });
+                            updateStep(index, 'done', await invoke<string>('install_apk', { serial, apkPath: fresh.path }));
+                            recovered = true;
+                        } catch {
+                            // report the first failure, which is the useful one
+                        }
+                    }
+                    if (!recovered) {
+                        updateStep(index, 'error', errorMessage(error));
+                        finish();
+                        return;
+                    }
+                }
+                index += 1;
+            }
+
+            // nothing below opens anything on the device
+            for (const { command } of setupCommands(serial)) {
+                updateStep(index, 'running');
+                const [cmd, ...args] = command.split(' ');
+                try {
+                    const result = await run(cmd, args);
+                    const output = (result.stderr || result.stdout || '').trim();
+                    updateStep(index, result.code === 0 ? 'done' : 'error', output || $_('task_exit_code', { values: { code: result.code } }));
+                } catch (error) {
+                    updateStep(index, 'error', errorMessage(error));
+                }
+                index += 1;
+            }
+
+            updateStep(index, 'running');
+            const after = await checkReadiness(serial);
+            updateStep(index, after.ready ? 'done' : 'error', after.ready ? $_('device_ready') : after.detail);
+            finish();
         }
-        finish();
+
+        await refreshReadiness();
     }
 
     /* ---------------------------------------------------------------- *
@@ -1360,11 +1415,8 @@
     function listenToMenu() {
         listen<string>('menu', ({ payload }) => {
             switch (payload) {
-                case 'setup':
-                    setupAdb();
-                    break;
-                case 'install_apk':
-                    installApk();
+                case 'prepare_device':
+                    prepareDevice();
                     break;
                 case 'import_gpx':
                     importGpx();
@@ -1582,9 +1634,8 @@
                 {setDarkMapStyle}
                 {patchCostingValues}
                 {resetCostingValues}
-                {installApk}
-                {setupAdb}
-                {silenceHelperNotifications}
+                {prepareDevice}
+                {deviceReadiness}
                 onMockError={reportMockError}
                 adbDevices={$adbDevices}
                 refreshAdbDevices={refreshDevices}
@@ -1736,9 +1787,8 @@
                 {setDarkMapStyle}
                 {patchCostingValues}
                 {resetCostingValues}
-                {installApk}
-                {setupAdb}
-                {silenceHelperNotifications}
+                {prepareDevice}
+                {deviceReadiness}
                 onMockError={reportMockError}
                 adbDevices={$adbDevices}
                 refreshAdbDevices={refreshDevices}

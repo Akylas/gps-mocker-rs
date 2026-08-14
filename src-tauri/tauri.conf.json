@@ -19,11 +19,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../resources/settings_apk-debug.apk": "settings_apk-debug.apk"
-    },
     "externalBin": [],
-    "copyright": "© 2021 Akylas",
+    "copyright": "\u00a9 2021 Akylas",
     "category": "DeveloperTool",
     "shortDescription": "",
     "longDescription": "",

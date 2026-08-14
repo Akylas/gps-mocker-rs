@@ -14,6 +14,14 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Location is a foreground-only permission, so a `location` foreground
+         service cannot be started while the app is in the background — which is
+         exactly what a desktop driving us over adb does. This lifts that. It is
+         never prompted for: the desktop's setup grants it with `pm grant`, and
+         the on-device flow does not need it because there the service starts
+         from the app's own screen. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -23,5 +31,19 @@
             android:name=".MockLocationService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- The adb control surface. Exported so a desktop can reach it, but
+             gated on WRITE_SECURE_SETTINGS, which the shell holds and no
+             ordinary app can be granted. -->
+        <receiver
+            android:name=".MockControlReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="com.akylas.gpsmocker.mocklocation.SET_LOCATION" />
+                <action android:name="com.akylas.gpsmocker.mocklocation.ACQUIRE" />
+                <action android:name="com.akylas.gpsmocker.mocklocation.STOP" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
