@@ -242,9 +242,9 @@
      */
     let lastAdbError: string | undefined;
 
-    const sendPositionToAndroidEmulators = throttle(async (position) => {
+    const sendPositionToAndroidEmulators = throttle(async (position, motion) => {
         try {
-            await sendLocation(position, $store.adbTarget);
+            await sendLocation(position, $store.adbTarget, motion);
             lastAdbError = undefined;
         } catch (error) {
             const message = errorMessage(error);
@@ -262,19 +262,41 @@
         $store.position = { lat: position.lat, lon: position.lon };
     }, 3000);
 
+    /**
+     * Heading and ground speed to send with a fix, when they mean anything.
+     *
+     * A hand-placed pin has neither, and inventing a bearing of 0 would point
+     * every navigation app under test due north. `heading` is passed by the
+     * moves that know their own direction — the keyboard and the drive pad.
+     */
+    function motionOf(heading?: number) {
+        if (heading !== undefined) {
+            // one step of manual driving: a direction, but no speed to speak of
+            return { bearing: heading };
+        }
+        if (snapshot?.position) {
+            return { bearing: snapshot.bearing, speedKmh: snapshot.speedKmh };
+        }
+        return {};
+    }
+
     /** Pushes a fix to every enabled target. Only this talks to the devices. */
-    function pushToDevices(position: Position) {
+    function pushToDevices(position: Position, heading?: number) {
+        const motion = motionOf(heading);
+
         if (isSelfMocking) {
             // the service is already publishing at its own rate while it
             // replays a track; a one-shot in between would read as a jump
             if (!isDriving() || snapshot?.state !== 'playing') {
-                pushFix(position, snapshot?.bearing, snapshot?.speedKmh);
+                pushFix(position, motion.bearing, motion.speedKmh);
             }
             return;
         }
         if (!settings.mockEnabled) {
             return;
         }
+        // the Simulator's location notification carries a coordinate and
+        // nothing else, so course and speed stop here
         if (settings.iosSimulatorsSupported && settings.iosSimulators) {
             sendPositionToIOSSimulators(position);
         }
@@ -282,7 +304,7 @@
             sendPositionToIOSDevices(position);
         }
         if (settings.androidEmulators) {
-            sendPositionToAndroidEmulators(position);
+            sendPositionToAndroidEmulators(position, motion);
         }
     }
 
@@ -303,10 +325,10 @@
      * follow; the devices only hear about it when mocking is on, so you can lay
      * out a route with mocking disabled and see exactly what will be replayed.
      */
-    function applyPosition(position: Position, { center = false, follow = false } = {}) {
+    function applyPosition(position: Position, { center = false, follow = false, heading = undefined as number | undefined } = {}) {
         currentPosition = position;
         userLocationControl?.updatePosition(position, center || (follow && settings.followVehicle));
-        pushToDevices(position);
+        pushToDevices(position, heading);
         saveCurrentMockPosition(position);
     }
 
@@ -451,8 +473,8 @@
      * playback and, once you stop moving, asks Valhalla for a way back to the
      * point on the route you had reached.
      */
-    function onManualMove(position: Position) {
-        applyPosition(position);
+    function onManualMove(position: Position, heading?: number) {
+        applyPosition(position, { heading });
         if (!activeRoute) {
             return;
         }
@@ -1396,7 +1418,9 @@
             return;
         }
         const heading = map.getBearing() + bearingDelta;
-        onManualMove(destination(currentPosition, fast ? fastDecaleMeters : slowDecaleMeters, heading));
+        // the step already knows which way it went, and nothing downstream can
+        // work that out from one position
+        onManualMove(destination(currentPosition, fast ? fastDecaleMeters : slowDecaleMeters, heading), heading);
     }
 
     function handleHolding(bearingDelta) {
