@@ -16,6 +16,41 @@ use cocoa::{
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 
+/// Puts the app icon in the Dock when the binary is running outside an .app.
+///
+/// macOS reads CFBundleIconFile from the bundle, which `tauri dev` does not
+/// build — so a development run shows a blank Dock tile however good the
+/// icons are. A packaged build already has its icon and is left alone.
+#[cfg(target_os = "macos")]
+pub fn set_dock_icon() {
+  use cocoa::base::id;
+
+  let bundled = std::env::current_exe()
+    .map(|path| path.to_string_lossy().contains(".app/Contents/MacOS/"))
+    .unwrap_or(false);
+  if bundled {
+    return;
+  }
+
+  const ICON: &[u8] = include_bytes!("../icons/icon.png");
+
+  unsafe {
+    let data: id = msg_send![
+      class!(NSData),
+      dataWithBytes: ICON.as_ptr() as *const std::ffi::c_void
+      length: ICON.len()
+    ];
+    let image: id = msg_send![class!(NSImage), alloc];
+    let image: id = msg_send![image, initWithData: data];
+    if image == nil {
+      eprintln!("could not decode icons/icon.png, so the Dock keeps its blank tile");
+      return;
+    }
+    let app: id = msg_send![class!(NSApplication), sharedApplication];
+    let _: () = msg_send![app, setApplicationIconImage: image];
+  }
+}
+
 #[tauri::command]
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
 pub fn send_location_to_simulators(lat: f32, lon: f32, devices: Vec<String>) {

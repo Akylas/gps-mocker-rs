@@ -37,6 +37,14 @@ pub fn run() {
       let _ = app.emit("menu", event.id().0.clone());
     });
 
+  #[cfg(target_os = "macos")]
+  let builder = builder.setup(|_app| {
+    // NSApplication exists by now, which it does not when the builder is
+    // still being assembled
+    apple::set_dock_icon();
+    Ok(())
+  });
+
   builder
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
