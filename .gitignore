@@ -12,3 +12,9 @@ package-lock.json
 # Tauri v2 generated ACL schemas
 gen/schemas
 src-tauri/gen/schemas
+
+# local plugin crates build into their own target dir
+src-tauri/plugins/*/target
+
+# Tauri copies bundle.resources into the Android assets on every build
+src-tauri/gen/android/app/src/main/assets/

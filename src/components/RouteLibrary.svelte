@@ -1,10 +1,11 @@
 <script lang="ts">
-    import { Modal, TextInput } from 'carbon-components-svelte';
     import Download from 'carbon-icons-svelte/lib/Download.svelte';
     import Edit from 'carbon-icons-svelte/lib/Edit.svelte';
     import TrashCan from 'carbon-icons-svelte/lib/TrashCan.svelte';
     import { _ } from 'svelte-i18n';
     import type { RouteSummary } from '../lib/library';
+    import IconButton from './ui/IconButton.svelte';
+    import Overlay from './ui/Overlay.svelte';
 
     export let open = false;
     export let routes: RouteSummary[] = [];
@@ -37,7 +38,7 @@
     }
 </script>
 
-<Modal passiveModal bind:open modalHeading={$_('saved_routes')} on:close={onClose} on:click:button--secondary={onClose}>
+<Overlay {open} title={$_('saved_routes')} {onClose}>
     {#if routes.length === 0}
         <p class="empty">{$_('no_saved_routes')}</p>
     {:else}
@@ -46,15 +47,18 @@
                 <li class="route" class:active={summary.id === activeId}>
                     <div class="route-main">
                         {#if renamingId === summary.id}
-                            <TextInput
-                                size="sm"
+                            <!-- svelte-ignore a11y-autofocus -->
+                            <input
+                                class="rename"
+                                type="text"
+                                autofocus
+                                aria-label={$_('route_name')}
                                 bind:value={renameValue}
-                                labelText={$_('route_name')}
-                                hideLabel
                                 on:blur={commitRename}
                                 on:keydown={(event) => {
                                     if (event.key === 'Enter') commitRename();
                                     if (event.key === 'Escape') renamingId = null;
+                                    event.stopPropagation();
                                 }}
                             />
                         {:else}
@@ -70,26 +74,20 @@
                         {/if}
                     </div>
                     <div class="route-actions">
-                        <button type="button" aria-label={$_('rename')} title={$_('rename')} on:click={() => startRename(summary)}>
-                            <Edit size={16} />
-                        </button>
-                        <button type="button" aria-label={$_('export_gpx')} title={$_('export_gpx')} on:click={() => onExport(summary.id)}>
-                            <Download size={16} />
-                        </button>
-                        <button class="danger" type="button" aria-label={$_('delete')} title={$_('delete')} on:click={() => onDelete(summary.id)}>
-                            <TrashCan size={16} />
-                        </button>
+                        <IconButton icon={Edit} label={$_('rename')} size={16} on:click={() => startRename(summary)} />
+                        <IconButton icon={Download} label={$_('export_gpx')} size={16} on:click={() => onExport(summary.id)} />
+                        <IconButton icon={TrashCan} label={$_('delete')} size={16} on:click={() => onDelete(summary.id)} />
                     </div>
                 </li>
             {/each}
         </ul>
     {/if}
-</Modal>
+</Overlay>
 
-<style lang="scss">
+<style>
     .empty {
-        padding: 24px 0;
-        color: #6f6f6f;
+        padding: 32px 0;
+        color: var(--text-faint);
         text-align: center;
     }
 
@@ -101,12 +99,14 @@
     .route {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 10px 8px;
-        border-bottom: 1px solid #e0e0e0;
+        gap: 8px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
     }
     .route.active {
-        background: #edf5ff;
+        /* a full tint would fight the map behind a translucent sheet */
+        box-shadow: inset 2px 0 0 var(--accent);
+        padding-left: 10px;
     }
     .route-main {
         flex: 1;
@@ -115,20 +115,30 @@
     .route-name {
         display: block;
         max-width: 100%;
+        min-height: 24px;
         overflow: hidden;
         padding: 0;
         border: none;
         background: none;
-        color: #0f62fe;
+        color: var(--text);
         cursor: pointer;
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 500;
         text-align: left;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
     .route-name:hover {
-        text-decoration: underline;
+        color: var(--accent);
+    }
+    .rename {
+        width: 100%;
+        min-height: var(--control-h);
+        padding: 0 8px;
+        border: 1px solid var(--accent);
+        border-radius: var(--radius);
+        background: var(--surface-sunken);
+        font-size: 14px;
     }
     .route-meta {
         display: flex;
@@ -136,41 +146,27 @@
         align-items: center;
         gap: 4px;
         margin-top: 2px;
-        color: #6f6f6f;
+        color: var(--text-faint);
         font-size: 11px;
     }
     .tag {
         margin-right: 2px;
         padding: 1px 6px;
-        background: #d0e2ff;
-        color: #0043ce;
+        border-radius: 4px;
+        background: var(--accent-soft);
+        color: var(--accent-text);
         font-size: 10px;
         letter-spacing: 0.02em;
         text-transform: uppercase;
     }
     .tag.valhalla {
-        background: #d9fbfb;
-        color: #005d5d;
+        background: var(--success-soft);
+        color: var(--success-text);
     }
 
     .route-actions {
         display: flex;
         flex-shrink: 0;
         gap: 2px;
-    }
-    .route-actions button {
-        display: flex;
-        padding: 6px;
-        border: none;
-        background: none;
-        color: #525252;
-        cursor: pointer;
-    }
-    .route-actions button:hover {
-        background: #e0e0e0;
-    }
-    .route-actions button.danger:hover {
-        background: #fff1f1;
-        color: #da1e28;
     }
 </style>

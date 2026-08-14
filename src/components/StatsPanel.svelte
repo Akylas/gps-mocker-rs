@@ -12,6 +12,12 @@
     export let rejoining: number | undefined = undefined;
     export let collapsed = false;
     export let onToggle: () => void;
+    /**
+     * The pointer shell floats this over the map; the touch shell renders it
+     * inline in the sheet, where a fixed-position card would sit outside its
+     * scroller.
+     */
+    export let floating = true;
 
     $: stats = route ? routeStats(route) : undefined;
     $: remaining = Math.max(0, snapshot.total - snapshot.along);
@@ -24,7 +30,7 @@
     }
 </script>
 
-<div class="stats" class:collapsed>
+<div class="stats" class:collapsed class:floating>
     <button class="stats-header" type="button" on:click={onToggle} aria-expanded={!collapsed}>
         <span class="stats-title">{$_('live_stats')}</span>
         <span class="stats-chevron" class:flipped={collapsed}><ChevronDown size={16} /></span>
@@ -123,17 +129,21 @@
 
 <style lang="scss">
     .stats {
-        position: fixed;
-        top: 60px;
-        left: 16px;
-        /* keep below the header panel, same reason as the transport bar */
-        z-index: 7400;
-        width: 300px;
+        width: 100%;
+        color: var(--text);
+    }
+    .stats.floating {
+        position: absolute;
+        top: 8px;
+        /* the map's own zoom and compass controls own the top-right corner */
+        right: 8px;
+        z-index: 28;
+        width: 290px;
         max-width: calc(100vw - 32px);
-        background: rgba(38, 38, 38, 0.96);
-        color: #f4f4f4;
-        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
-        backdrop-filter: blur(6px);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
     }
 
     .stats-header {
@@ -174,15 +184,15 @@
     .stats-progress-bar {
         flex: 1;
         height: 4px;
-        background: #525252;
+        background: var(--border-strong);
     }
     .stats-progress-bar span {
         display: block;
         height: 100%;
-        background: #78a9ff;
+        background: var(--accent);
     }
     .stats-progress-label {
-        font-family: 'IBM Plex Mono', monospace;
+        font-family: var(--mono);
         font-size: 11px;
     }
 
@@ -199,7 +209,7 @@
         grid-column: 1 / -1;
     }
     dt {
-        color: #a8a8a8;
+        color: var(--text-faint);
         font-size: 10px;
         letter-spacing: 0.02em;
         text-transform: uppercase;
@@ -217,17 +227,17 @@
         line-height: 1.1;
     }
     dd.mono {
-        font-family: 'IBM Plex Mono', monospace;
+        font-family: var(--mono);
         font-size: 12px;
     }
     .unit {
-        color: #a8a8a8;
+        color: var(--text-faint);
         font-size: 12px;
     }
     .badge {
         padding: 1px 5px;
-        background: #f1c21b;
-        color: #161616;
+        background: var(--warning);
+        color: var(--on-warning);
         font-size: 10px;
         font-weight: 600;
     }
@@ -238,12 +248,12 @@
         gap: 8px;
         margin-top: 12px;
         padding: 8px 10px;
-        background: #393939;
-        border-left: 3px solid #0f62fe;
+        background: var(--surface-raised);
+        border-left: 3px solid var(--accent);
     }
     .maneuver-distance {
         flex-shrink: 0;
-        font-family: 'IBM Plex Mono', monospace;
+        font-family: var(--mono);
         font-size: 13px;
         font-weight: 600;
     }
@@ -253,17 +263,17 @@
     }
 
     .off-route.rejoining {
-        background: rgba(15, 98, 254, 0.18);
-        border-left-color: #4589ff;
-        color: #d0e2ff;
+        background: var(--accent-soft);
+        border-left-color: var(--accent);
+        color: var(--accent-text);
     }
 
     .off-route {
         margin-top: 10px;
         padding: 6px 10px;
-        background: rgba(255, 131, 43, 0.15);
-        border-left: 3px solid #ff832b;
-        color: #ffd9be;
+        background: var(--warning-soft);
+        border-left: 3px solid var(--warning);
+        color: var(--warning-text);
         font-size: 11px;
     }
 </style>

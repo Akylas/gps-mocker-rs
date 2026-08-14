@@ -4,14 +4,17 @@
     import { listen } from '@tauri-apps/api/event';
     import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
     import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-    import { type as osType_ } from '@tauri-apps/plugin-os';
     import { Command, open } from '@tauri-apps/plugin-shell';
-    import { Button, Checkbox, Content, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput, Toggle } from 'carbon-components-svelte';
     import DocumentImport from 'carbon-icons-svelte/lib/DocumentImport.svelte';
     import LocationFilled from 'carbon-icons-svelte/lib/LocationFilled.svelte';
     import DirectionFork from 'carbon-icons-svelte/lib/DirectionFork.svelte';
     import Save from 'carbon-icons-svelte/lib/Save.svelte';
+    import Search from 'carbon-icons-svelte/lib/Search.svelte';
     import Settings from 'carbon-icons-svelte/lib/Settings.svelte';
+    import Chart_3D from 'carbon-icons-svelte/lib/Chart_3D.svelte';
+    import Location from 'carbon-icons-svelte/lib/Location.svelte';
+    import MapCenter from 'carbon-icons-svelte/lib/MapCenter.svelte';
+    import GameConsole from 'carbon-icons-svelte/lib/GameConsole.svelte';
     import { KeyboardKeyHold } from 'hold-event';
     import { RulerControl } from 'mapbox-gl-controls';
     import { Map, NavigationControl } from 'maplibre-gl';
@@ -32,45 +35,67 @@
     import MapboxGLButtonControl from './MapboxGLButtonControl';
     import CostingOptions from './CostingOptions.svelte';
     import PlaybackBar from './PlaybackBar.svelte';
+    import RouteControls from './RouteControls.svelte';
     import RouteLibrary from './RouteLibrary.svelte';
     import StatsPanel from './StatsPanel.svelte';
     import TaskPanel from './TaskPanel.svelte';
     import UserLocationControl from './UserLocationControl';
+    import { compact, type Detent } from '../lib/layout';
+    import { host, isDesktop, isSelfMocking } from '../lib/platform';
+    import { mockStatus, onProgress, onStopped, refreshStatus, stopMocking } from '../lib/mockProvider';
+    import { alongAtPosition, clearTrack, isDriving, pushFix, syncPlayback, syncRoute } from '../lib/nativePlayback';
+    import DrivePad from './DrivePad.svelte';
+    import Reticle from './Reticle.svelte';
+    import SearchBar from './SearchBar.svelte';
+    import SettingsPanel from './SettingsPanel.svelte';
+    import Inspector from './shell/Inspector.svelte';
+    import Rail from './shell/Rail.svelte';
+    import Sheet from './shell/Sheet.svelte';
+    import IconButton from './ui/IconButton.svelte';
+    import Button from './ui/Button.svelte';
+    import { resolvedTheme, setThemePreference, type ThemePreference } from '../lib/theme';
+    import { followSystemBars } from '../lib/systemBars';
+    import { adbDevices, HELPER_PACKAGE, openHelperNotificationSettings, refreshDevices, resolveSerials, sendLocation, wakeHelper, type AdbDevice } from '../lib/adb';
 
     /* ---------------------------------------------------------------- *
      * platform + settings                                              *
      * ---------------------------------------------------------------- */
 
-    let drawerOpened = false;
-    let osType;
-    async function getOs() {
-        if (!osType) {
-            switch (osType_()) {
-                case 'linux':
-                    osType = 'linux';
-                    break;
-                case 'windows':
-                    osType = 'windows';
-                    break;
-                case 'macos':
-                    osType = 'darwin';
-                    break;
-                default:
-                    osType = 'unknown';
-                    break;
-            }
+    /** which surface the settings are showing in: the rail's inspector, or the sheet */
+    let settingsOpen = false;
+    /** how far the touch shell's sheet is pulled up */
+    let detent: Detent = 'peek';
+    let searchOpen = false;
+    /** the touch shell's stand-in for the W/A/S/D driving keys */
+    let padOpen = false;
+    /** reticle up, waiting to drop the vehicle wherever the map is aimed */
+    let placeMode = false;
+
+    /**
+     * Reaching for the map is a clear signal the sheet is in the way, so any
+     * touch on it drops the sheet back to peek rather than making the user
+     * dismiss it first.
+     */
+    function collapseSheet() {
+        if (detent !== 'peek') {
+            detent = 'peek';
         }
-        return osType;
     }
 
     const DEFAULT_SETTINGS = {
         position: { lat: 45.1811, lon: 5.8141 },
         androidEmulators: true,
+        /** 'auto', 'all', or an adb serial; see lib/adb.ts for how it resolves */
+        adbTarget: 'auto',
         iosSimulators: true,
         iosDevices: true,
         speedInKm: 90,
         keyRepeatSpeedMs: 16.6,
+        theme: 'auto' as ThemePreference,
         mapStyle: 'https://api.maptiler.com/maps/streets/style.json?key=tEP4ZtWVB93CfqyCnbR0',
+        // the map is most of the screen, so a dark shell over a bright basemap
+        // would not read as a dark theme at all
+        mapStyleDark: 'https://api.maptiler.com/maps/streets-v2-dark/style.json?key=tEP4ZtWVB93CfqyCnbR0',
         // terrain
         terrainPreset: 'mapterhorn',
         terrainDataUrl: TERRAIN_PRESETS[0].url,
@@ -116,7 +141,11 @@
         settings = value;
         localStorage.setItem('settings', JSON.stringify(value));
     });
-    getOs().then((r) => ($store.iosSimulatorsSupported = r === 'darwin'));
+    $store.iosSimulatorsSupported = host === 'macos';
+
+    // the pre-paint script in index.html already read this out of localStorage;
+    // this is what keeps it following the setting once someone changes it
+    $: setThemePreference($store.theme);
 
     const taskLabels = {
         succeeded: () => $_('task_succeeded'),
@@ -157,12 +186,6 @@
     /* ---------------------------------------------------------------- *
      * device plumbing                                                  *
      * ---------------------------------------------------------------- */
-
-    async function spawn(cmd, args, cwd?) {
-        const command = Command.create(cmd, args, { cwd });
-        command.on('error', (error) => console.error(`command error: "${error}"`));
-        return command.spawn();
-    }
 
     async function exec(cmd, args, cwd?) {
         const result = await Command.create(cmd, args, { cwd }).execute();
@@ -208,12 +231,29 @@
         }
     }, 300);
 
+    /**
+     * The last adb complaint that was surfaced.
+     *
+     * This runs on every playback tick, so the same "no device attached" would
+     * otherwise reopen the task panel five times a second. Only a *different*
+     * message gets through, and a success clears the latch so the next real
+     * failure is heard again.
+     */
+    let lastAdbError: string | undefined;
+
     const sendPositionToAndroidEmulators = throttle(async (position) => {
-        const args = ['shell', 'am', 'startservice', '-e', 'longitude', position.lon + '', '-e', 'latitude', position.lat + '', 'io.appium.settings/.LocationService'];
         try {
-            await spawn('adb', args);
+            await sendLocation(position, $store.adbTarget);
+            lastAdbError = undefined;
         } catch (error) {
-            console.error(error);
+            const message = errorMessage(error);
+            if (message === lastAdbError) {
+                return;
+            }
+            lastAdbError = message;
+            startTask($_('android_emulators'), [{ label: message }]);
+            updateStep(0, 'error', message);
+            finish();
         }
     }, 200);
 
@@ -223,6 +263,14 @@
 
     /** Pushes a fix to every enabled target. Only this talks to the devices. */
     function pushToDevices(position: Position) {
+        if (isSelfMocking) {
+            // the service is already publishing at its own rate while it
+            // replays a track; a one-shot in between would read as a jump
+            if (!isDriving() || snapshot?.state !== 'playing') {
+                pushFix(position, snapshot?.bearing, snapshot?.speedKmh);
+            }
+            return;
+        }
         if (!settings.mockEnabled) {
             return;
         }
@@ -305,7 +353,8 @@
         }
     });
 
-    $: player.setOptions({
+    $: playerOptions = {
+        ...DEFAULT_PLAYER_OPTIONS,
         baseSpeedKmh: $store.playbackSpeed,
         speedMultiplier: $store.speedMultiplier,
         useRecordedSpeed: $store.useRecordedSpeed,
@@ -313,7 +362,58 @@
         minSlowdownFactor: $store.minSlowdownFactor,
         maneuverLookahead: $store.maneuverLookahead,
         loop: $store.loopPlayback
-    });
+    };
+    $: player.setOptions(playerOptions);
+
+    /* ---------------------------------------------------------------- *
+     * native playback (android)                                        *
+     * ---------------------------------------------------------------- */
+
+    /**
+     * The speed profile the service replays is baked from these, so any of them
+     * changing means a rebake. `speedMultiplier` and `loop` are absent on
+     * purpose: the service applies both to its own clock, so changing them
+     * costs one small call instead of re-sending the whole track.
+     */
+    $: profileKey = `${$store.playbackSpeed}|${$store.useRecordedSpeed}|${$store.smartSlowdown}|${$store.minSlowdownFactor}|${$store.maneuverLookahead}`;
+    $: if (isSelfMocking) rebakeTrack(activeRoute, profileKey);
+    $: if (isSelfMocking) syncPlayback({ speedMultiplier: $store.speedMultiplier, loop: $store.loopPlayback });
+
+    const rebakeTrack = debounce((route: Route | undefined) => syncRoute(route, playerOptions), 250);
+
+    /**
+     * Playback control that keeps both clocks together.
+     *
+     * Every path that starts, stops or moves the playhead goes through here, so
+     * the service never ends up driving from a position the UI has left behind.
+     */
+    const transport = {
+        toggle() {
+            player.toggle();
+            syncPlayback({ playing: snapshot?.state === 'playing', along: snapshot?.along });
+        },
+        play() {
+            player.play();
+            syncPlayback({ playing: true, along: snapshot?.along });
+        },
+        pause() {
+            player.pause();
+            syncPlayback({ playing: false });
+        },
+        stop() {
+            player.stop();
+            syncPlayback({ playing: false, along: 0 });
+        },
+        restart() {
+            player.seek(0);
+            player.play();
+            syncPlayback({ playing: true, along: 0 });
+        },
+        seekFraction(fraction: number) {
+            player.seekFraction(fraction);
+            syncPlayback({ along: snapshot?.along });
+        }
+    };
 
     function setActiveRoute(route: Route | undefined, { fit = true } = {}) {
         activeRoute = route;
@@ -322,6 +422,9 @@
         player.setRoute(route);
         layers?.setRoute(route);
         layers?.setDetour(undefined);
+        if (!route) {
+            clearTrack();
+        }
         if (route) {
             applyPosition(route.points[0], { center: fit });
             if (fit) {
@@ -467,7 +570,7 @@
 
     onMount(async () => {
         try {
-            appliedStyleUrl = $store.mapStyle;
+            appliedStyleUrl = $resolvedTheme === 'dark' ? $store.mapStyleDark : $store.mapStyle;
             map = new Map({
                 container: mapContainer,
                 style: appliedStyleUrl,
@@ -507,13 +610,14 @@
             map.addControl(userLocationControl);
 
             map.on('click', (event) => {
+                // touch has no click that is not also the start of a pan, so the
+                // compact shell places points with the reticle instead
+                if ($compact) {
+                    return;
+                }
                 const position = { lat: event.lngLat.lat, lon: event.lngLat.lng };
                 if (routeBuilderMode) {
-                    waypoints = [...waypoints, position];
-                    layers?.setWaypoints(waypoints);
-                    if (waypoints.length >= 2) {
-                        scheduleWaypointRoute();
-                    }
+                    addWaypoint(position);
                     return;
                 }
                 if (shouldMoveOnClick) {
@@ -542,7 +646,9 @@
                 }
             });
 
-            map.addControl(new NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }));
+            // bottom-right, not the default top-right: that corner belongs to
+            // the live stats card, and whichever sits on top eats the clicks
+            map.addControl(new NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }), 'bottom-right');
             map.addControl(
                 new MapboxGLButtonControl({
                     className: 'maplibregl-ctrl-geolocate',
@@ -551,22 +657,62 @@
                         event.stopPropagation();
                         userLocationControl.centerOnLocation();
                     }
-                })
+                }),
+                'bottom-right'
             );
-            map.addControl(new RulerControl({}), 'top-right');
+            map.addControl(new RulerControl({}), 'bottom-right');
             map.on('ruler.on', () => (shouldMoveOnClick = false));
             map.on('ruler.off', () => (shouldMoveOnClick = true));
 
             applyPosition(settings.position, { center: true });
             refreshLibrary();
+            if (isTauri && !isSelfMocking) {
+                // so the device picker in the settings is populated before it
+                // is ever opened
+                refreshDevices().catch((error) => console.warn('cannot list adb devices', error));
+            }
         } catch (error) {
             console.error(error);
         }
+
+        if (isSelfMocking) {
+            await refreshStatus();
+            unlistenProgress = await onProgress((progress) => {
+                if (!isDriving()) {
+                    return;
+                }
+                const along = alongAtPosition(progress.positionMs);
+                // Only correct real drift. The webview keeps its own clock for
+                // a smooth marker, but a backgrounded webview gets throttled
+                // while the service keeps driving, so on the way back the
+                // service is the one that is right.
+                if (Math.abs((snapshot?.along ?? 0) - along) > DRIFT_TOLERANCE_M) {
+                    player.syncAlong(along);
+                    if (progress.lat !== undefined && progress.lon !== undefined) {
+                        applyPosition({ lat: progress.lat, lon: progress.lon }, { follow: true });
+                    }
+                }
+                if (progress.ended && snapshot?.state === 'playing') {
+                    player.pause();
+                }
+            });
+            // the notification's stop button kills the service from outside
+            unlistenStopped = await onStopped(() => player.pause());
+        }
     });
+
+    /** How far the webview's clock may run from the service's before a resync. */
+    const DRIFT_TOLERANCE_M = 15;
+    let unlistenProgress: () => void = () => undefined;
+    let unlistenStopped: () => void = () => undefined;
+    const unfollowSystemBars = followSystemBars();
 
     onDestroy(() => {
         unsubscribePlayer();
         player.destroy();
+        unlistenProgress();
+        unlistenStopped();
+        unfollowSystemBars();
     });
 
     // Both of these used to re-run on any settings write. `setStyle` drops every
@@ -575,10 +721,10 @@
     let appliedStyleUrl: string | undefined;
     let appliedTerrain: string | undefined;
 
-    $: applyMapStyle($store.mapStyle);
-    $: syncTerrain(
-        `${$store.terrainDataUrl}|${$store.terrainEncoding}|${$store.terrainTileSize}|${$store.terrainMaxZoom}|${$store.terrainExaggeration}|${$store.terrain3d}|${$store.hillshade}`
-    );
+    // the theme picks which of the two style URLs is live; both stay editable
+    $: activeMapStyle = $resolvedTheme === 'dark' ? $store.mapStyleDark : $store.mapStyle;
+    $: applyMapStyle(activeMapStyle);
+    $: syncTerrain(`${$store.terrainDataUrl}|${$store.terrainEncoding}|${$store.terrainTileSize}|${$store.terrainMaxZoom}|${$store.terrainExaggeration}|${$store.terrain3d}|${$store.hillshade}`);
 
     /**
      * The URL fields edit a local draft and commit on a pause, so a half-typed
@@ -591,12 +737,15 @@
      * from elsewhere goes through the setters below and updates both.
      */
     let styleDraft = settings.mapStyle;
+    let darkStyleDraft = settings.mapStyleDark;
     let terrainDraft = settings.terrainDataUrl;
 
     const commitStyleDraft = debounce((value: string) => setMapStyle(value), 700);
+    const commitDarkStyleDraft = debounce((value: string) => setDarkMapStyle(value), 700);
     const commitTerrainDraft = debounce((value: string) => setTerrainUrl(value), 700);
 
     $: commitStyleDraft(styleDraft);
+    $: commitDarkStyleDraft(darkStyleDraft);
     $: commitTerrainDraft(terrainDraft);
 
     function setMapStyle(url: string) {
@@ -604,6 +753,14 @@
         styleDraft = trimmed;
         if (trimmed && trimmed !== settings.mapStyle) {
             $store.mapStyle = trimmed;
+        }
+    }
+
+    function setDarkMapStyle(url: string) {
+        const trimmed = (url || '').trim();
+        darkStyleDraft = trimmed;
+        if (trimmed && trimmed !== settings.mapStyleDark) {
+            $store.mapStyleDark = trimmed;
         }
     }
 
@@ -684,6 +841,28 @@
     let waypoints: Position[] = [];
     let buildingRoute = false;
     let builderPreview: Route | undefined;
+
+    function addWaypoint(position: Position) {
+        waypoints = [...waypoints, position];
+        layers?.setWaypoints(waypoints);
+        if (waypoints.length >= 2) {
+            scheduleWaypointRoute();
+        }
+    }
+
+    /** What the reticle drops: a waypoint while building, otherwise the vehicle. */
+    function placeAtMapCentre() {
+        if (!map) {
+            return;
+        }
+        const centre = map.getCenter();
+        const position = { lat: centre.lat, lon: centre.lng };
+        if (routeBuilderMode) {
+            addWaypoint(position);
+        } else {
+            onManualMove(position);
+        }
+    }
 
     function toggleRouteBuilder(next = !routeBuilderMode) {
         routeBuilderMode = next;
@@ -883,7 +1062,11 @@
     }
 
     async function importGpxFromPath(path: string) {
-        const name = path.split(/[\\/]/).pop()?.replace(/\.gpx$/i, '') || 'GPX';
+        const name =
+            path
+                .split(/[\\/]/)
+                .pop()
+                ?.replace(/\.gpx$/i, '') || 'GPX';
         const xml = await readTextFile(path);
         await importGpxContent(xml, name);
     }
@@ -1031,7 +1214,15 @@
         startTask($_('task_install_apk'), [{ label: $_('task_install_apk_step'), command: 'adb install <bundled apk>' }]);
         updateStep(0, 'running');
         try {
-            updateStep(0, 'done', await invoke<string>('install_apk'));
+            const serials = await resolveSerials($store.adbTarget);
+            for (const serial of serials) {
+                const output = await invoke<string>('install_apk', { serial });
+                // a package that has never been launched sits in Android's
+                // stopped state, where no service start resolves; launching it
+                // once here means the very first fix works
+                await wakeHelper(serial);
+                updateStep(0, 'done', output);
+            }
         } catch (error) {
             updateStep(0, 'error', errorMessage(error));
         }
@@ -1039,18 +1230,58 @@
     }
 
     async function setupAdb() {
+        // every step is pinned to a serial for the same reason the position
+        // push is: adb refuses a bare command once two devices are attached
+        let serials: string[];
+        try {
+            serials = await resolveSerials($store.adbTarget);
+        } catch (error) {
+            startTask($_('task_setup_adb'), [{ label: errorMessage(error) }]);
+            updateStep(0, 'error', errorMessage(error));
+            finish();
+            return;
+        }
+
         const permissions = ['READ_PHONE_STATE', 'WRITE_SETTINGS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_MOCK_LOCATION', 'SET_ANIMATION_SCALE', 'CHANGE_CONFIGURATION'];
-        return runTask($_('task_setup_adb'), [
-            ...permissions.map((permission) => ({
-                label: $_('task_grant', { values: { permission } }),
-                command: `adb shell pm grant io.appium.settings android.permission.${permission}`
-            })),
-            {
-                label: $_('task_start_settings_app'),
-                command: 'adb shell am start -W -n io.appium.settings/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000'
-            },
-            { label: $_('task_allow_mock_location'), command: 'adb shell appops set io.appium.settings android:mock_location allow' }
-        ]);
+
+        const steps = serials.flatMap((serial) => {
+            const adb = `adb -s ${serial}`;
+            const on = serials.length > 1 ? ` (${serial})` : '';
+            return [
+                ...permissions.map((permission) => ({
+                    label: $_('task_grant', { values: { permission } }) + on,
+                    command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.${permission}`
+                })),
+                {
+                    label: $_('task_start_settings_app') + on,
+                    command: `${adb} shell am start -W -n ${HELPER_PACKAGE}/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000`
+                },
+                {
+                    label: $_('task_allow_mock_location') + on,
+                    command: `${adb} shell appops set ${HELPER_PACKAGE} android:mock_location allow`
+                }
+            ];
+        });
+
+        return runTask($_('task_setup_adb'), steps);
+    }
+
+    /**
+     * The helper chimes on every position because its own notification channel
+     * carries a sound and its service re-posts on each start. Nothing on this
+     * side can change a channel's importance, so this opens the one screen
+     * where it can be set to Silent.
+     */
+    async function silenceHelperNotifications() {
+        startTask($_('task_silence_helper'), [{ label: $_('task_silence_helper_step') }]);
+        updateStep(0, 'running');
+        try {
+            await openHelperNotificationSettings($store.adbTarget);
+            updateStep(0, 'done', $_('task_silence_helper_hint'));
+        } catch (error) {
+            updateStep(0, 'error', errorMessage(error));
+        }
+        finish();
     }
 
     /* ---------------------------------------------------------------- *
@@ -1074,11 +1305,18 @@
         dKey.holdIntervalDelay = $store.keyRepeatSpeedMs;
     }
 
+    /** One driving step, shared by the keyboard keys and the touch drive pad. */
+    function driveStep(bearingDelta: number, fast: boolean) {
+        if (!map) {
+            return;
+        }
+        const heading = map.getBearing() + bearingDelta;
+        onManualMove(destination(currentPosition, fast ? fastDecaleMeters : slowDecaleMeters, heading));
+    }
+
     function handleHolding(bearingDelta) {
         return function (event) {
-            const heading = map.getBearing() + bearingDelta;
-            const delta = event.originalEvent.shiftKey ? fastDecaleMeters : slowDecaleMeters;
-            onManualMove(destination(currentPosition, delta, heading));
+            driveStep(bearingDelta, !!event.originalEvent.shiftKey);
         };
     }
     aKey.addEventListener('holding', handleHolding(270));
@@ -1097,7 +1335,7 @@
         }
         if (event.key === ' ') {
             event.preventDefault();
-            player.toggle();
+            transport.toggle();
             return;
         }
         if (event.key === 'Escape' && routeBuilderMode) {
@@ -1113,67 +1351,74 @@
      * menu + drag and drop                                             *
      * ---------------------------------------------------------------- */
 
-    listen<string>('menu', ({ payload }) => {
-        switch (payload) {
-            case 'setup':
-                setupAdb();
-                break;
-            case 'install_apk':
-                installApk();
-                break;
-            case 'import_gpx':
-                importGpx();
-                break;
-            case 'save_route':
-                saveActiveRoute();
-                break;
-            case 'saved_routes':
-                refreshLibrary().then(() => (libraryOpen = true));
-                break;
-            case 'export_gpx':
-                if (activeRoute) exportGpx(activeRoute);
-                break;
-            case 'play_pause':
-                player.toggle();
-                break;
-            case 'stop_playback':
-                player.stop();
-                break;
-            case 'restart_playback':
-                player.seek(0);
-                player.play();
-                break;
-            case 'build_route':
-                toggleRouteBuilder();
-                break;
-            case 'compute_maneuvers':
-                computeManeuvers();
-                break;
-            case 'fit_route':
-                layers?.fitRoute();
-                break;
-            case 'clear_route':
-                clearRoute();
-                break;
-            case 'learn_more':
-                startTask($_('task_learn_more'), [{ label: REPO_URL, command: REPO_URL }]);
-                updateStep(0, 'running');
-                open(REPO_URL).then(
-                    () => {
-                        updateStep(0, 'done');
-                        finish();
-                    },
-                    (error) => {
-                        updateStep(0, 'error', errorMessage(error));
-                        finish();
-                    }
-                );
-                break;
-            default:
-                console.warn('unhandled menu event', payload);
-                break;
-        }
-    });
+    // there is no menu bar off desktop, and no tauri backend at all under
+    // `dev:web`, where subscribing would reject before anything renders
+    if (isTauri && isDesktop) {
+        listenToMenu();
+    }
+
+    function listenToMenu() {
+        listen<string>('menu', ({ payload }) => {
+            switch (payload) {
+                case 'setup':
+                    setupAdb();
+                    break;
+                case 'install_apk':
+                    installApk();
+                    break;
+                case 'import_gpx':
+                    importGpx();
+                    break;
+                case 'save_route':
+                    saveActiveRoute();
+                    break;
+                case 'saved_routes':
+                    refreshLibrary().then(() => (libraryOpen = true));
+                    break;
+                case 'export_gpx':
+                    if (activeRoute) exportGpx(activeRoute);
+                    break;
+                case 'play_pause':
+                    transport.toggle();
+                    break;
+                case 'stop_playback':
+                    transport.stop();
+                    break;
+                case 'restart_playback':
+                    transport.restart();
+                    break;
+                case 'build_route':
+                    toggleRouteBuilder();
+                    break;
+                case 'compute_maneuvers':
+                    computeManeuvers();
+                    break;
+                case 'fit_route':
+                    layers?.fitRoute();
+                    break;
+                case 'clear_route':
+                    clearRoute();
+                    break;
+                case 'learn_more':
+                    startTask($_('task_learn_more'), [{ label: REPO_URL, command: REPO_URL }]);
+                    updateStep(0, 'running');
+                    open(REPO_URL).then(
+                        () => {
+                            updateStep(0, 'done');
+                            finish();
+                        },
+                        (error) => {
+                            updateStep(0, 'error', errorMessage(error));
+                            finish();
+                        }
+                    );
+                    break;
+                default:
+                    console.warn('unhandled menu event', payload);
+                    break;
+            }
+        });
+    }
 
     let dragging = false;
     if (isTauri) {
@@ -1200,9 +1445,7 @@
      * address search                                                   *
      * ---------------------------------------------------------------- */
 
-    let active = false;
     let value = '';
-    let selectedResultIndex = -1;
     let results = [];
 
     function getAddressLabel(obj) {
@@ -1236,8 +1479,6 @@
     }, 500);
 
     $: searchText(value);
-    $: onSelectedAddress(selectedResultIndex);
-    $: if (results.length === 0) selectedResultIndex = -1;
 
     function onSelectedAddress(index) {
         if (index < 0 || results.length < index + 1) {
@@ -1249,11 +1490,7 @@
         }
         const position = { lat: geometry.coordinates[1], lon: geometry.coordinates[0] };
         if (routeBuilderMode) {
-            waypoints = [...waypoints, position];
-            layers?.setWaypoints(waypoints);
-            if (waypoints.length >= 2) {
-                scheduleWaypointRoute();
-            }
+            addWaypoint(position);
             map?.flyTo({ center: [position.lon, position.lat], zoom: 15 });
             return;
         }
@@ -1269,260 +1506,328 @@
     // a detour that is only queued still reads as "off route": you have to press
     // play before anything drives back
     $: drivingBack = snapshot?.onDetour && snapshot.state === 'playing';
+
+    /**
+     * "Mocking is on" means two different things: on Android the app itself
+     * holds the test providers, everywhere else it is a switch that decides
+     * whether fixes get forwarded to an attached device.
+     */
+    $: mockActive = isSelfMocking ? $mockStatus.mocking : $store.mockEnabled;
+
+    function disableMocking() {
+        if (isSelfMocking) {
+            stopMocking().catch(reportMockError);
+        } else {
+            $store.mockEnabled = false;
+        }
+    }
+
+    function reportMockError(error: unknown) {
+        startTask($_('mock_enabled'), [{ label: $_('mock_provider_setup') }]);
+        updateStep(0, 'error', errorMessage(error));
+        finish();
+    }
+
+    function undoWaypoint() {
+        waypoints = waypoints.slice(0, -1);
+        layers?.setWaypoints(waypoints);
+        if (waypoints.length >= 2) {
+            scheduleWaypointRoute();
+        } else {
+            builderPreview = undefined;
+            layers?.setRoute(activeRoute);
+        }
+    }
 </script>
 
-<div class="drawer-container" class:dragging>
-    <Header company="GPS" platformName="Mocker" bind:isSideNavOpen={drawerOpened}>
-        <svelte:fragment slot="skip-to-content">
-            <SkipToContent />
-        </svelte:fragment>
-        <HeaderUtilities>
-            <HeaderSearch id="search-btn" bind:active bind:value bind:selectedResultIndex placeholder={$_('search_location')} {results} />
-            <HeaderGlobalAction aria-label={$_('import_gpx')} title={$_('import_gpx')} icon={DocumentImport} on:click={importGpx} />
-            <HeaderGlobalAction aria-label={$_('saved_routes')} title={$_('saved_routes')} icon={Save} on:click={() => refreshLibrary().then(() => (libraryOpen = true))} />
-            <HeaderGlobalAction
-                aria-label={$_('build_route')}
-                title={$_('build_route')}
-                icon={DirectionFork}
-                class={routeBuilderMode ? 'gm-action-active' : ''}
-                on:click={() => toggleRouteBuilder()}
+<div class="app" class:dragging class:touch={$compact}>
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="map" id="map" bind:this={mapContainer} on:pointerdown={collapseSheet} />
+
+    <!-- ---------------------------------------------------------------- *
+         pointer shell: icon rail, sliding inspector, docked transport
+         ---------------------------------------------------------------- -->
+    {#if !$compact}
+        <Rail>
+            <svelte:fragment slot="top">
+                <IconButton icon={Search} label={$_('search_location')} active={searchOpen} on:click={() => (searchOpen = !searchOpen)} />
+                <IconButton icon={DocumentImport} label={$_('import_gpx')} on:click={importGpx} />
+                <IconButton icon={Save} label={$_('saved_routes')} on:click={() => refreshLibrary().then(() => (libraryOpen = true))} />
+                <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
+            </svelte:fragment>
+            <svelte:fragment slot="bottom">
+                {#if mockActive}
+                    <IconButton icon={LocationFilled} label={$_('mock_enabled')} active on:click={disableMocking} />
+                {/if}
+                <IconButton icon={Settings} label={$_('settings')} active={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)} />
+            </svelte:fragment>
+        </Rail>
+
+        {#if searchOpen}
+            <div class="rail-search">
+                <SearchBar bind:value {results} placeholder={$_('search_location')} onSelect={onSelectedAddress} />
+            </div>
+        {/if}
+
+        <Inspector title={$_('settings')} open={settingsOpen} onClose={() => (settingsOpen = false)}>
+            <SettingsPanel
+                {store}
+                defaults={DEFAULT_SETTINGS}
+                bind:styleDraft
+                bind:darkStyleDraft
+                bind:terrainDraft
+                busy={$task?.running}
+                {selectTerrainPreset}
+                {setMapStyle}
+                {setDarkMapStyle}
+                {patchCostingValues}
+                {resetCostingValues}
+                {installApk}
+                {setupAdb}
+                {silenceHelperNotifications}
+                onMockError={reportMockError}
+                adbDevices={$adbDevices}
+                refreshAdbDevices={refreshDevices}
             />
-            {#if $store.mockEnabled}
-                <HeaderGlobalAction aria-label={$_('mock_enabled')} title={$_('mock_enabled')} icon={LocationFilled} on:click={() => ($store.mockEnabled = false)} />
+        </Inspector>
+
+        <StatsPanel
+            route={activeRoute}
+            {snapshot}
+            position={currentPosition}
+            offRoute={drivingBack ? undefined : offRouteDistance}
+            rejoining={drivingBack ? snapshot.detourRemaining : undefined}
+            collapsed={$store.statsCollapsed}
+            onToggle={() => ($store.statsCollapsed = !$store.statsCollapsed)}
+        />
+    {/if}
+
+    <!-- ---------------------------------------------------------------- *
+         touch shell: floating search pill, map buttons, bottom sheet
+         ---------------------------------------------------------------- -->
+    {#if $compact}
+        <div class="top-bar">
+            <SearchBar floating bind:value {results} placeholder={$_('search_location')} onSelect={onSelectedAddress} />
+        </div>
+
+        <div class="map-buttons">
+            <IconButton icon={MapCenter} label={$_('center_on_position')} on:click={() => userLocationControl?.centerOnLocation()} />
+            <IconButton icon={Chart_3D} label={$_('terrain_3d')} active={$store.terrain3d} on:click={() => ($store.terrain3d = !$store.terrain3d)} />
+            <IconButton icon={GameConsole} label={$_('manual_driving')} active={padOpen} on:click={() => (padOpen = !padOpen)} />
+            <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
+            <IconButton icon={Location} label={$_('drop_pin')} active={placeMode} on:click={() => (placeMode = !placeMode)} />
+        </div>
+
+        {#if padOpen}
+            <div class="pad-dock">
+                <DrivePad repeatMs={$store.keyRepeatSpeedMs} onStep={driveStep} />
+            </div>
+        {/if}
+
+        <!-- only up while something is actually being placed: a permanent
+             crosshair over the map reads as clutter, not as a tool -->
+        {#if placeMode || routeBuilderMode}
+            <Reticle label={routeBuilderMode ? $_('add_waypoint') : $_('move_here')} onConfirm={placeAtMapCentre} />
+        {/if}
+    {/if}
+
+    <!-- ---------------------------------------------------------------- *
+         shared: the task log, the route builder bar, the transport
+         ---------------------------------------------------------------- -->
+    {#if $compact}
+        <Sheet bind:detent>
+            <svelte:fragment slot="peek">
+                {#if $task}
+                    <TaskPanel task={$task} onDismiss={dismissTask} />
+                {/if}
+                {#if routeBuilderMode}
+                    <div class="builder-compact">
+                        <span class="builder-status">
+                            {#if buildingRoute}
+                                {$_('computing')}…
+                            {:else if builderPreview}
+                                {formatDistance(builderLength)} · {builderPreview.maneuvers?.length ?? 0} {$_('maneuvers')}
+                            {:else}
+                                <!-- the pointer wording talks about clicking and
+                                     right-clicking, neither of which exists here -->
+                                {$_('build_route_hint_touch')}
+                            {/if}
+                        </span>
+                        <div class="builder-actions">
+                            <Button size="small" kind="ghost" disabled={waypoints.length === 0} on:click={undoWaypoint}>{$_('undo')}</Button>
+                            <Button size="small" kind="ghost" on:click={() => toggleRouteBuilder(false)}>{$_('cancel')}</Button>
+                            <Button size="small" kind="primary" disabled={!builderPreview} on:click={acceptBuiltRoute}>{$_('use_route')}</Button>
+                        </div>
+                    </div>
+                {:else if activeRoute}
+                    <PlaybackBar
+                        compact
+                        route={activeRoute}
+                        {snapshot}
+                        loop={$store.loopPlayback}
+                        onPlayPause={transport.toggle}
+                        onStop={transport.stop}
+                        onRestart={transport.restart}
+                        onSeek={transport.seekFraction}
+                        onLoop={(v) => ($store.loopPlayback = v)}
+                        onClear={clearRoute}
+                    />
+                {:else}
+                    <div class="empty-peek">
+                        <Button size="small" on:click={importGpx}>{$_('import_gpx')}</Button>
+                        <Button size="small" on:click={() => refreshLibrary().then(() => (libraryOpen = true))}>{$_('saved_routes')}</Button>
+                        <Button size="small" on:click={() => toggleRouteBuilder(true)}>{$_('build_route')}</Button>
+                    </div>
+                {/if}
+            </svelte:fragment>
+
+            {#if activeRoute}
+                <RouteControls
+                    compact
+                    route={activeRoute}
+                    {snapshot}
+                    speedMultiplier={$store.speedMultiplier}
+                    loop={$store.loopPlayback}
+                    computing={computingManeuvers}
+                    onSpeedMultiplier={(v) => ($store.speedMultiplier = v)}
+                    onLoop={(v) => ($store.loopPlayback = v)}
+                    onStop={transport.stop}
+                    onRestart={transport.restart}
+                    onClear={clearRoute}
+                    onFit={() => layers?.fitRoute()}
+                    onSave={saveActiveRoute}
+                    onComputeManeuvers={computeManeuvers}
+                />
+                <StatsPanel
+                    floating={false}
+                    route={activeRoute}
+                    {snapshot}
+                    position={currentPosition}
+                    offRoute={drivingBack ? undefined : offRouteDistance}
+                    rejoining={drivingBack ? snapshot.detourRemaining : undefined}
+                    collapsed={$store.statsCollapsed}
+                    onToggle={() => ($store.statsCollapsed = !$store.statsCollapsed)}
+                />
             {/if}
-            <HeaderAction bind:isOpen={drawerOpened}>
-                <div class="drawer-content">
-                    <h3>{$_('settings')}</h3>
 
-                    <h4>{$_('mocking')}</h4>
-                    <Toggle bind:toggled={$store.mockEnabled} labelText={$_('mock_enabled')} labelA={$_('off')} labelB={$_('on')} />
-                    <Checkbox bind:checked={$store.androidEmulators} labelText={$_('android_emulators')} />
-                    <Checkbox bind:checked={$store.iosDevices} labelText={$_('ios_devices')} />
-                    {#if $store.iosSimulatorsSupported}
-                        <Checkbox bind:checked={$store.iosSimulators} labelText={$_('ios_simulators')} />
-                    {/if}
+            {#if routeBuilderMode}
+                <CostingOptions
+                    compact
+                    costing={$store.costing}
+                    values={$store.costingOptions?.[$store.costing]}
+                    onCosting={(next) => {
+                        $store.costing = next;
+                        if (waypoints.length >= 2) scheduleWaypointRoute();
+                    }}
+                    onChange={patchCostingValues}
+                    onReset={resetCostingValues}
+                />
+            {/if}
 
-                    <HeaderPanelDivider />
-                    <h4>{$_('playback')}</h4>
-                    <Slider hideTextInput bind:value={$store.playbackSpeed} min={1} max={300} step={1} labelText={`${$_('playback_base_speed')}: ${$store.playbackSpeed} km/h`} />
-                    <Checkbox bind:checked={$store.useRecordedSpeed} labelText={$_('use_recorded_speed')} />
-                    <Checkbox bind:checked={$store.smartSlowdown} labelText={$_('smart_slowdown')} />
-                    {#if $store.smartSlowdown}
-                        <Slider
-                            hideTextInput
-                            bind:value={$store.minSlowdownFactor}
-                            min={0.05}
-                            max={1}
-                            step={0.05}
-                            labelText={`${$_('min_slowdown_factor')}: ${Math.round($store.minSlowdownFactor * 100)}%`}
-                        />
-                        <Slider hideTextInput bind:value={$store.maneuverLookahead} min={20} max={500} step={10} labelText={`${$_('maneuver_lookahead')}: ${$store.maneuverLookahead} m`} />
-                    {/if}
-                    <Checkbox bind:checked={$store.loopPlayback} labelText={$_('loop')} />
-                    <Checkbox bind:checked={$store.followVehicle} labelText={$_('follow_vehicle')} />
+            <SettingsPanel
+                {store}
+                defaults={DEFAULT_SETTINGS}
+                bind:styleDraft
+                bind:darkStyleDraft
+                bind:terrainDraft
+                busy={$task?.running}
+                {selectTerrainPreset}
+                {setMapStyle}
+                {setDarkMapStyle}
+                {patchCostingValues}
+                {resetCostingValues}
+                {installApk}
+                {setupAdb}
+                {silenceHelperNotifications}
+                onMockError={reportMockError}
+                adbDevices={$adbDevices}
+                refreshAdbDevices={refreshDevices}
+            />
+        </Sheet>
+    {:else}
+        <!-- one dock so the builder and the transport bar stack against the
+             bottom edge instead of each guessing the other's height -->
+        <div class="bottom-dock">
+            {#if $task}
+                <TaskPanel task={$task} onDismiss={dismissTask} />
+            {/if}
 
-                    <HeaderPanelDivider />
-                    <h4>{$_('routing')}</h4>
-                    <TextInput bind:value={$store.valhallaUrl} labelText={$_('valhalla_url')} placeholder={DEFAULT_VALHALLA_URL} autocomplete="off" spellcheck="false" autocorrect="off" />
-                    <!-- the same panel the route builder shows, so one set of
-                         options drives building, rerouting and map matching -->
-                    <div class="drawer-costing">
+            {#if routeBuilderMode}
+                {#if $store.builderOptionsOpen}
+                    <div class="panel">
                         <CostingOptions
+                            compact
                             costing={$store.costing}
                             values={$store.costingOptions?.[$store.costing]}
-                            onCosting={(next) => ($store.costing = next)}
+                            onCosting={(next) => {
+                                $store.costing = next;
+                                if (waypoints.length >= 2) scheduleWaypointRoute();
+                            }}
                             onChange={patchCostingValues}
                             onReset={resetCostingValues}
                         />
                     </div>
-                    <Checkbox bind:checked={$store.autoComputeManeuvers} labelText={$_('auto_compute_maneuvers')} />
-                    <Checkbox bind:checked={$store.snapToRoads} labelText={$_('snap_to_roads')} />
-                    <Checkbox bind:checked={$store.autoReroute} labelText={$_('auto_reroute')} />
-
-                    <HeaderPanelDivider />
-                    <h4>{$_('manual_driving')}</h4>
-                    <Slider hideTextInput bind:value={$store.speedInKm} min={1} max={600} step={1} labelText={`${$_('speed')}: ${$store.speedInKm} km/h`} />
-                    <Slider hideTextInput bind:value={$store.keyRepeatSpeedMs} min={10} max={5000} step={1} labelText={`${$_('keyRepeatSpeedMs')}: ${$store.keyRepeatSpeedMs} ms`} />
-
-                    <HeaderPanelDivider />
-                    <h4>{$_('map')}</h4>
-                    <TextInput
-                        bind:value={styleDraft}
-                        labelText={$_('mapstyle_url')}
-                        helperText={$_('mapstyle_url_help')}
-                        autocomplete="off"
-                        spellcheck="false"
-                        autocorrect="off"
-                        on:blur={() => setMapStyle(styleDraft)}
-                    />
-                    <div class="drawer-actions">
-                        <Button size="small" kind="ghost" on:click={() => setMapStyle(DEFAULT_SETTINGS.mapStyle)}>{$_('reset_to_default')}</Button>
+                {/if}
+                <div class="panel builder">
+                    <div class="builder-text">
+                        <strong>{$_('build_route')}</strong>
+                        <span>{$_('build_route_hint')}</span>
+                        {#if buildingRoute}
+                            <span class="builder-status">{$_('computing')}…</span>
+                        {:else if builderPreview}
+                            <span class="builder-status">{formatDistance(builderLength)} · {builderPreview.maneuvers?.length ?? 0} {$_('maneuvers')}</span>
+                        {/if}
                     </div>
-
-                    <HeaderPanelDivider />
-                    <h4>{$_('terrain')}</h4>
-                    <div class="preset-row">
-                        {#each TERRAIN_PRESETS as preset}
-                            <button
-                                type="button"
-                                class="preset"
-                                class:active={$store.terrainPreset === preset.id}
-                                on:click={() => selectTerrainPreset(preset.id)}
-                            >
-                                {preset.label}
-                            </button>
-                        {/each}
-                    </div>
-                    <TextInput
-                        bind:value={terrainDraft}
-                        labelText={$_('terrain_data_url')}
-                        helperText={$_('terrain_data_url_help')}
-                        autocomplete="off"
-                        spellcheck="false"
-                        autocorrect="off"
-                        on:blur={() => setTerrainUrl(terrainDraft)}
-                    />
-                    <div class="field-row">
-                        <label class="field">
-                            <span>{$_('terrain_encoding')}</span>
-                            <select bind:value={$store.terrainEncoding}>
-                                <option value="terrarium">terrarium</option>
-                                <option value="mapbox">mapbox</option>
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>{$_('terrain_tile_size')}</span>
-                            <select bind:value={$store.terrainTileSize}>
-                                <option value={256}>256</option>
-                                <option value={512}>512</option>
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>{$_('terrain_max_zoom')}</span>
-                            <input type="number" min="1" max="22" bind:value={$store.terrainMaxZoom} />
-                        </label>
-                    </div>
-                    <Checkbox bind:checked={$store.terrain3d} labelText={$_('terrain_3d')} />
-                    <Checkbox bind:checked={$store.hillshade} labelText={$_('hillshade')} />
-                    {#if $store.terrain3d}
-                        <Slider
-                            hideTextInput
-                            bind:value={$store.terrainExaggeration}
-                            min={0.1}
-                            max={3}
-                            step={0.1}
-                            labelText={`${$_('exageration')}: ${$store.terrainExaggeration.toFixed(1)}×`}
-                        />
-                    {/if}
-
-                    <HeaderPanelDivider />
-                    <h4>{$_('android_setup')}</h4>
-                    <div class="drawer-actions">
-                        <Button size="small" kind="tertiary" disabled={$task?.running} on:click={installApk}>{$_('task_install_apk')}</Button>
-                        <Button size="small" kind="tertiary" disabled={$task?.running} on:click={setupAdb}>{$_('task_setup_adb')}</Button>
+                    <div class="builder-actions">
+                        <button
+                            type="button"
+                            class="builder-options-toggle"
+                            class:open={$store.builderOptionsOpen}
+                            aria-expanded={$store.builderOptionsOpen}
+                            on:click={() => ($store.builderOptionsOpen = !$store.builderOptionsOpen)}
+                        >
+                            <Settings size={16} />
+                            <span>{$_(`costing_${$store.costing}`)}</span>
+                        </button>
+                        <Button size="small" kind="ghost" disabled={waypoints.length === 0} on:click={undoWaypoint}>{$_('undo')}</Button>
+                        <Button size="small" kind="ghost" on:click={() => toggleRouteBuilder(false)}>{$_('cancel')}</Button>
+                        <Button size="small" kind="primary" disabled={!builderPreview} on:click={acceptBuiltRoute}>{$_('use_route')}</Button>
                     </div>
                 </div>
-            </HeaderAction>
-        </HeaderUtilities>
-    </Header>
+            {/if}
 
-    <Content id="app-content">
-        <div style:pointer-events="auto" class="mapfull" id="map" bind:this={mapContainer} style="align-self:flex-end;margin: 0px;" />
-    </Content>
-
-    <StatsPanel
-        route={activeRoute}
-        {snapshot}
-        position={currentPosition}
-        offRoute={drivingBack ? undefined : offRouteDistance}
-        rejoining={drivingBack ? snapshot.detourRemaining : undefined}
-        collapsed={$store.statsCollapsed}
-        onToggle={() => ($store.statsCollapsed = !$store.statsCollapsed)}
-    />
-
-    <!-- one dock so the builder and the transport bar stack against the bottom
-         edge instead of each guessing the other's height -->
-    <div class="bottom-dock">
-        <TaskPanel task={$task} onDismiss={dismissTask} />
-
-        {#if routeBuilderMode}
-            {#if $store.builderOptionsOpen}
-                <div class="builder-options">
-                    <CostingOptions
-                        compact
-                        costing={$store.costing}
-                        values={$store.costingOptions?.[$store.costing]}
-                        onCosting={(next) => {
-                            $store.costing = next;
-                            if (waypoints.length >= 2) scheduleWaypointRoute();
-                        }}
-                        onChange={patchCostingValues}
-                        onReset={resetCostingValues}
+            {#if activeRoute}
+                <div class="panel">
+                    <RouteControls
+                        route={activeRoute}
+                        {snapshot}
+                        speedMultiplier={$store.speedMultiplier}
+                        loop={$store.loopPlayback}
+                        computing={computingManeuvers}
+                        onSpeedMultiplier={(v) => ($store.speedMultiplier = v)}
+                        onLoop={(v) => ($store.loopPlayback = v)}
+                        onStop={transport.stop}
+                        onRestart={transport.restart}
+                        onClear={clearRoute}
+                        onFit={() => layers?.fitRoute()}
+                        onSave={saveActiveRoute}
+                        onComputeManeuvers={computeManeuvers}
+                    />
+                    <PlaybackBar
+                        route={activeRoute}
+                        {snapshot}
+                        loop={$store.loopPlayback}
+                        onPlayPause={transport.toggle}
+                        onStop={transport.stop}
+                        onRestart={transport.restart}
+                        onSeek={transport.seekFraction}
+                        onLoop={(v) => ($store.loopPlayback = v)}
+                        onClear={clearRoute}
                     />
                 </div>
             {/if}
-            <div class="builder">
-                <div class="builder-text">
-                    <strong>{$_('build_route')}</strong>
-                    <span>{$_('build_route_hint')}</span>
-                    {#if buildingRoute}
-                        <span class="builder-status">{$_('computing')}…</span>
-                    {:else if builderPreview}
-                        <span class="builder-status">{formatDistance(builderLength)} · {builderPreview.maneuvers?.length ?? 0} {$_('maneuvers')}</span>
-                    {/if}
-                </div>
-                <div class="builder-actions">
-                    <button
-                        type="button"
-                        class="builder-options-toggle"
-                        class:open={$store.builderOptionsOpen}
-                        aria-expanded={$store.builderOptionsOpen}
-                        on:click={() => ($store.builderOptionsOpen = !$store.builderOptionsOpen)}
-                    >
-                        <Settings size={16} />
-                        <span>{$_(`costing_${$store.costing}`)}</span>
-                    </button>
-                    <Button
-                        size="small"
-                        kind="ghost"
-                        disabled={waypoints.length === 0}
-                        on:click={() => {
-                            waypoints = waypoints.slice(0, -1);
-                            layers?.setWaypoints(waypoints);
-                            if (waypoints.length >= 2) scheduleWaypointRoute();
-                            else {
-                                builderPreview = undefined;
-                                layers?.setRoute(activeRoute);
-                            }
-                        }}>{$_('undo')}</Button
-                    >
-                    <Button size="small" kind="ghost" on:click={() => toggleRouteBuilder(false)}>{$_('cancel')}</Button>
-                    <Button size="small" disabled={!builderPreview} on:click={acceptBuiltRoute}>{$_('use_route')}</Button>
-                </div>
-            </div>
-        {/if}
-
-        <PlaybackBar
-        route={activeRoute}
-        {snapshot}
-        speedMultiplier={$store.speedMultiplier}
-        loop={$store.loopPlayback}
-        onPlayPause={() => player.toggle()}
-        onStop={() => player.stop()}
-        onRestart={() => {
-            player.seek(0);
-            player.play();
-        }}
-        onSeek={(fraction) => player.seekFraction(fraction)}
-        onSpeedMultiplier={(v) => ($store.speedMultiplier = v)}
-        onLoop={(v) => ($store.loopPlayback = v)}
-        onClear={clearRoute}
-        onFit={() => layers?.fitRoute()}
-        onSave={saveActiveRoute}
-            onComputeManeuvers={computeManeuvers}
-            computing={computingManeuvers}
-        />
-    </div>
+        </div>
+    {/if}
 
     <RouteLibrary
         bind:open={libraryOpen}
@@ -1540,31 +1845,38 @@
     {/if}
 </div>
 
-<style lang="scss">
-    .drawer-content h4 {
-        margin: 4px 0 8px;
-        color: #6f6f6f;
-        font-size: 11px;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
+<style>
+    /* The map is the page. Everything else floats over it, which is what lets
+       the same panels be a rail and an inspector on one shell and a sheet on
+       the other without either owning a band of layout. */
+    .app {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+    .map {
+        position: absolute;
+        inset: 0;
     }
 
-    .drawer-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 12px;
+    /* ---- pointer shell ------------------------------------------------ */
+
+    .rail-search {
+        position: absolute;
+        top: 8px;
+        left: 68px;
+        z-index: 31;
+        width: 320px;
     }
 
     /* Everything pinned to the bottom lives in one column, so panels stack
        against the edge instead of each hard-coding the other's height. */
     .bottom-dock {
-        position: fixed;
+        position: absolute;
         left: 50%;
-        bottom: 16px;
-        /* below the header panel (8000): the settings drawer overlaps the right
-           end of this bar, and whichever sits on top eats the clicks */
-        z-index: 7500;
+        bottom: 12px;
+        z-index: 27;
         display: flex;
         width: min(880px, calc(100vw - 32px));
         flex-direction: column;
@@ -1575,93 +1887,73 @@
     .bottom-dock > :global(*) {
         pointer-events: auto;
     }
-
-    .builder-options {
+    .panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
         padding: 10px 14px;
-        background: rgba(38, 38, 38, 0.97);
-        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
-        backdrop-filter: blur(6px);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
     }
 
-    .builder {
+    /* ---- touch shell -------------------------------------------------- */
+
+    .top-bar {
+        position: absolute;
+        top: calc(8px + var(--safe-top));
+        left: calc(8px + var(--safe-left));
+        right: calc(8px + var(--safe-right));
+        z-index: 31;
+    }
+
+    .map-buttons {
+        position: absolute;
+        /* clear of the search pill above and the sheet below */
+        top: calc(60px + var(--safe-top));
+        right: calc(8px + var(--safe-right));
+        z-index: 30;
         display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 4px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+    }
+
+    .pad-dock {
+        position: absolute;
+        left: calc(8px + var(--safe-left));
+        /* above the sheet's peek detent */
+        bottom: calc(150px + var(--safe-bottom));
+        z-index: 30;
+    }
+
+    .empty-peek {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 4px 0;
+    }
+
+    .builder-compact {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 4px 0;
+    }
+
+    /* ---- route builder ------------------------------------------------ */
+
+    .builder {
+        flex-direction: row;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        padding: 10px 14px;
-        background: rgba(15, 98, 254, 0.95);
-        color: #fff;
-        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.4);
-    }
-    .builder-options-toggle {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        padding: 4px 8px;
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        background: none;
-        color: #fff;
-        cursor: pointer;
-        font-size: 11px;
-    }
-    .builder-options-toggle:hover,
-    .builder-options-toggle.open {
-        background: rgba(0, 0, 0, 0.3);
-    }
-
-    .preset-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        margin-bottom: 10px;
-    }
-    .preset {
-        padding: 3px 8px;
-        border: 1px solid #6f6f6f;
-        background: none;
-        color: #c6c6c6;
-        cursor: pointer;
-        font-size: 11px;
-    }
-    .preset:hover {
-        border-color: #a8a8a8;
-        color: #f4f4f4;
-    }
-    .preset.active {
-        border-color: #0f62fe;
-        background: #0f62fe;
-        color: #fff;
-    }
-
-    .field-row {
-        display: flex;
-        gap: 8px;
-        margin: 10px 0;
-    }
-    .field {
-        display: flex;
-        min-width: 0;
-        flex: 1;
-        flex-direction: column;
-        gap: 3px;
-        color: #a8a8a8;
-        font-size: 11px;
-    }
-    .field select,
-    .field input {
-        width: 100%;
-        padding: 3px 4px;
-        border: 1px solid #6f6f6f;
-        background: #262626;
-        color: #f4f4f4;
-        font-family: inherit;
-        font-size: 12px;
-    }
-
-    .drawer-costing {
-        margin: 8px 0 4px;
-        padding: 10px;
-        background: rgba(0, 0, 0, 0.35);
+        border-color: var(--accent);
     }
     .builder-text {
         display: flex;
@@ -1670,32 +1962,46 @@
         font-size: 12px;
     }
     .builder-status {
-        color: #d0e2ff;
+        color: var(--text-muted);
         font-size: 11px;
     }
     .builder-actions {
         display: flex;
         flex-shrink: 0;
+        flex-wrap: wrap;
         gap: 4px;
+    }
+    .builder-options-toggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-height: calc(var(--control-h) - 6px);
+        padding: 0 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 11px;
+    }
+    .builder-options-toggle:hover,
+    .builder-options-toggle.open {
+        border-color: var(--accent);
+        color: var(--text);
     }
 
     .drop-overlay {
-        position: fixed;
+        position: absolute;
         inset: 0;
-        z-index: 9500;
+        z-index: 70;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(15, 98, 254, 0.25);
-        border: 3px dashed #0f62fe;
-        color: #fff;
+        background: var(--accent-soft);
+        border: 3px dashed var(--accent);
+        color: var(--text);
         font-size: 20px;
-        font-weight: 600;
+        font-weight: 500;
         pointer-events: none;
-        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-    }
-
-    :global(.gm-action-active) {
-        background: #0f62fe !important;
     }
 </style>

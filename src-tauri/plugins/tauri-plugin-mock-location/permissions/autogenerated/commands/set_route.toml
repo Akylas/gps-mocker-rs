@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-route"
+description = "Enables the set_route command without any pre-configured scope."
+commands.allow = ["set_route"]
+
+[[permission]]
+identifier = "deny-set-route"
+description = "Denies the set_route command without any pre-configured scope."
+commands.deny = ["set_route"]

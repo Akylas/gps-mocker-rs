@@ -57,15 +57,7 @@
 
                 {#if spec.kind === 'ratio'}
                     <div class="control">
-                        <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            aria-label={spec.label}
-                            value={current[spec.key]}
-                            on:input={(event) => set(spec.key, parseFloat(event.currentTarget.value))}
-                        />
+                        <input type="range" min="0" max="1" step="0.05" aria-label={spec.label} value={current[spec.key]} on:input={(event) => set(spec.key, parseFloat(event.currentTarget.value))} />
                         <span class="value">{Number(current[spec.key]).toFixed(2)}</span>
                     </div>
                 {:else if spec.kind === 'number'}
@@ -104,7 +96,7 @@
 
 <style lang="scss">
     .costing {
-        color: #f4f4f4;
+        color: var(--text);
         font-size: 11px;
     }
 
@@ -121,22 +113,22 @@
         gap: 6px;
     }
     .profile > span {
-        color: #a8a8a8;
+        color: var(--text-faint);
         letter-spacing: 0.02em;
         text-transform: uppercase;
     }
 
     select {
         padding: 3px 6px;
-        border: 1px solid #6f6f6f;
-        background: #262626;
-        color: #f4f4f4;
+        border: 1px solid var(--border-strong);
+        background: var(--surface-sunken);
+        color: var(--text);
         font-family: inherit;
         font-size: 11px;
     }
     .compact select {
-        border-color: rgba(255, 255, 255, 0.5);
-        background: rgba(0, 0, 0, 0.35);
+        border-color: var(--accent);
+        background: var(--surface-sunken);
     }
 
     .reset {
@@ -146,13 +138,13 @@
         padding: 3px 6px;
         border: 1px solid transparent;
         background: none;
-        color: #a8a8a8;
+        color: var(--text-faint);
         cursor: pointer;
         font-size: 11px;
     }
     .reset:hover:not(:disabled) {
-        border-color: #8d8d8d;
-        color: #f4f4f4;
+        border-color: var(--border-strong);
+        color: var(--text);
     }
     .reset:disabled {
         cursor: default;
@@ -180,20 +172,20 @@
     }
     .key {
         overflow: hidden;
-        color: #c6c6c6;
+        color: var(--text-muted);
         font-family: 'IBM Plex Mono', monospace;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
     .option.modified .key {
-        color: #f4f4f4;
+        color: var(--text);
         font-weight: 600;
     }
     .fork {
         flex-shrink: 0;
         padding: 0 4px;
-        background: #8a3ffc;
-        color: #fff;
+        background: var(--accent);
+        color: var(--on-accent);
         font-size: 9px;
         letter-spacing: 0.03em;
         text-transform: uppercase;

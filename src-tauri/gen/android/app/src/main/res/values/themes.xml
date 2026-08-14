@@ -1,0 +1,13 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.gps_mocker" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!--
+            The app is drawn edge to edge, so the status and navigation bars sit
+            over the map. Their icons are the one part of the theme the webview
+            cannot restyle, so they follow the system light/dark resource
+            qualifier instead: dark icons here, light ones in values-night.
+        -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

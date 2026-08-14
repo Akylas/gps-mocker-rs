@@ -5,6 +5,7 @@ const ignoreWarnings = new Set(['a11y-no-onchange', 'a11y-label-has-associated-c
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const config = require('./package.json');
+const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(({ command, mode }) => {
     const production = mode === 'production';
     return {
@@ -12,19 +13,19 @@ export default defineConfig(({ command, mode }) => {
         base: './', // use relative paths
         publicDir: '../public',
         clearScreen: false,
+        // `tauri android dev` serves the dev bundle to a device over the LAN, so
+        // it sets TAURI_DEV_HOST and vite has to bind to that address rather
+        // than to localhost.
         server: {
+            host: host || false,
             port: 3011,
-            strictPort: true
+            strictPort: true,
+            hmr: host ? { protocol: 'ws', host, port: 3012 } : undefined
         },
         resolve: {
-            alias: production
-                ? {
-                      'mapbox-gl': 'maplibre-gl'
-                  }
-                : {
-                      'mapbox-gl': 'maplibre-gl',
-                      './carbon.scss': 'carbon-components-svelte/css/g90.css'
-                  }
+            alias: {
+                'mapbox-gl': 'maplibre-gl'
+            }
         },
         optimizeDeps: {
             // include: ['geo-three']

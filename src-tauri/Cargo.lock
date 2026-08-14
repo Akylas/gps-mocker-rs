@@ -1388,11 +1388,9 @@ dependencies = [
 name = "gps_mocker"
 version = "2.1.0"
 dependencies = [
- "byteorder",
  "cocoa",
  "log",
  "objc",
- "openssl",
  "rusty_libimobiledevice",
  "serde",
  "serde_json",
@@ -1400,6 +1398,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "tauri-plugin-mock-location",
  "tauri-plugin-os",
  "tauri-plugin-shell",
  "tauri-plugin-window-state",
@@ -3786,6 +3785,17 @@ dependencies = [
  "thiserror 2.0.20",
  "toml 1.1.4+spec-1.1.0",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-mock-location"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

@@ -1,0 +1,14 @@
+{
+  "identifier": "mobile",
+  "description": "mock location provider, Android only",
+  "local": true,
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "android"
+  ],
+  "permissions": [
+    "mock-location:default"
+  ]
+}
