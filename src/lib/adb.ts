@@ -175,12 +175,19 @@ const HELPER_CHANNEL = 'main_channel';
  */
 const STOPPED_PACKAGE = /Not found; no service started/i;
 
-/** Serials already woken during the current run of failures, so we ask once. */
-const woken = new Set<string>();
-
 /**
- * Clears the stopped state the only way that works: launching the helper's
- * own activity. It briefly comes to the foreground on the device.
+ * Clears the stopped state the only way that works.
+ *
+ * Nothing quieter revives a force-stopped app: `pm unstop` clears the flag but
+ * the service still will not resolve, and no service of the helper's own can
+ * start its process either. Only launching its activity does, and that takes
+ * over the screen.
+ *
+ * Which is why this is never called from the push path. It interrupts whatever
+ * app is being tested, and restarting the helper re-registers the test provider
+ * — which silently drops any location listener that app had running, so it
+ * stops receiving updates until it re-subscribes. Waking mid-drive costs the
+ * user the very restart it was trying to save them.
  */
 export async function wakeHelper(serial: string) {
     await Command.create('adb', [
@@ -212,23 +219,17 @@ export async function sendLocation(position: Position, target: AdbTarget) {
 
     await Promise.all(
         serials.map(async (serial) => {
-            let reported = await pushOnce(serial, position);
-
-            // A stopped package is recoverable, and the user should not have to
-            // know that "run Setup" is the cure. Wake it and push again — once
-            // per streak, so a genuinely broken helper does not have its UI
-            // thrown up the screen on every tick.
-            if (reported && STOPPED_PACKAGE.test(reported) && !woken.has(serial)) {
-                woken.add(serial);
-                await wakeHelper(serial);
-                reported = await pushOnce(serial, position);
+            const reported = await pushOnce(serial, position);
+            if (!reported) {
+                return;
             }
-
-            if (reported) {
-                throw new Error(`${serial}: ${reported}`);
+            // Say what to do rather than doing it: reviving the helper means
+            // pulling it onto the screen and restarting its provider, which is
+            // the user's call to make between runs, not ours to make mid-drive.
+            if (STOPPED_PACKAGE.test(reported)) {
+                throw new Error(`${serial}: the helper app has been stopped — run “Setup Android device” to restart it`);
             }
-            // recovered, so a later stop can be healed the same way
-            woken.delete(serial);
+            throw new Error(`${serial}: ${reported}`);
         })
     );
 }

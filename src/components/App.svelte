@@ -1259,6 +1259,19 @@
                 {
                     label: $_('task_allow_mock_location') + on,
                     command: `${adb} shell appops set ${HELPER_PACKAGE} android:mock_location allow`
+                },
+                // Doze and the background-service limits are what force-stop the
+                // helper mid-route. Recovering from that means pulling it onto
+                // the screen and restarting its provider, which drops the
+                // location listener in whatever app is being tested — so it is
+                // far better not to let it be stopped at all.
+                {
+                    label: $_('task_exempt_battery') + on,
+                    command: `${adb} shell dumpsys deviceidle whitelist +${HELPER_PACKAGE}`
+                },
+                {
+                    label: $_('task_allow_background') + on,
+                    command: `${adb} shell cmd appops set ${HELPER_PACKAGE} RUN_ANY_IN_BACKGROUND allow`
                 }
             ];
         });
