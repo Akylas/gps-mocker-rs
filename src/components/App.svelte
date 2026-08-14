@@ -449,11 +449,19 @@
     /** Switching preset pulls its url, encoding, tile size and zoom cap along. */
     function selectTerrainPreset(id: string) {
         const preset = presetById(id);
+        if (!preset) {
+            return;
+        }
+        if (preset.url) {
+            terrainDraft = preset.url;
+        }
         $store = {
             ...settings,
             terrainPreset: id,
-            ...(preset && preset.url ? { terrainDataUrl: preset.url } : {}),
-            ...(preset ? { terrainEncoding: preset.encoding, terrainTileSize: preset.tileSize, terrainMaxZoom: preset.maxzoom } : {})
+            ...(preset.url ? { terrainDataUrl: preset.url } : {}),
+            terrainEncoding: preset.encoding,
+            terrainTileSize: preset.tileSize,
+            terrainMaxZoom: preset.maxzoom
         };
     }
 
@@ -572,17 +580,40 @@
         `${$store.terrainDataUrl}|${$store.terrainEncoding}|${$store.terrainTileSize}|${$store.terrainMaxZoom}|${$store.terrainExaggeration}|${$store.terrain3d}|${$store.hillshade}`
     );
 
+    /**
+     * The URL fields edit a local draft and commit on a pause, so a half-typed
+     * URL never reaches setStyle or a TileJSON fetch.
+     *
+     * The drafts are deliberately never mirrored back from the store. A
+     * `$: draft = $store.x` alongside `bind:value={draft}` fights the input:
+     * the binding writes the draft, the statement writes it straight back, and
+     * the field cannot be edited at all. Anything that changes these values
+     * from elsewhere goes through the setters below and updates both.
+     */
     let styleDraft = settings.mapStyle;
     let terrainDraft = settings.terrainDataUrl;
-    // keep the drafts honest when something else changes the value (presets,
-    // reset button, a settings import)
-    $: styleDraft = $store.mapStyle;
-    $: terrainDraft = $store.terrainDataUrl;
 
-    const commitStyleDraft = debounce((value: string) => ($store.mapStyle = value), 700);
-    const commitTerrainDraft = debounce((value: string) => {
-        $store = { ...settings, terrainDataUrl: value, terrainPreset: 'custom' };
-    }, 700);
+    const commitStyleDraft = debounce((value: string) => setMapStyle(value), 700);
+    const commitTerrainDraft = debounce((value: string) => setTerrainUrl(value), 700);
+
+    $: commitStyleDraft(styleDraft);
+    $: commitTerrainDraft(terrainDraft);
+
+    function setMapStyle(url: string) {
+        const trimmed = (url || '').trim();
+        styleDraft = trimmed;
+        if (trimmed && trimmed !== settings.mapStyle) {
+            $store.mapStyle = trimmed;
+        }
+    }
+
+    function setTerrainUrl(url: string) {
+        const trimmed = (url || '').trim();
+        terrainDraft = trimmed;
+        if (trimmed && trimmed !== settings.terrainDataUrl) {
+            $store = { ...settings, terrainDataUrl: trimmed, terrainPreset: 'custom' };
+        }
+    }
 
     /**
      * Loads the style document ourselves instead of handing maplibre the URL.
@@ -1322,11 +1353,10 @@
                         autocomplete="off"
                         spellcheck="false"
                         autocorrect="off"
-                        on:input={(event) => commitStyleDraft(event.detail)}
-                        on:blur={() => ($store.mapStyle = styleDraft)}
+                        on:blur={() => setMapStyle(styleDraft)}
                     />
                     <div class="drawer-actions">
-                        <Button size="small" kind="ghost" on:click={() => ($store.mapStyle = DEFAULT_SETTINGS.mapStyle)}>{$_('reset_to_default')}</Button>
+                        <Button size="small" kind="ghost" on:click={() => setMapStyle(DEFAULT_SETTINGS.mapStyle)}>{$_('reset_to_default')}</Button>
                     </div>
 
                     <HeaderPanelDivider />
@@ -1350,8 +1380,7 @@
                         autocomplete="off"
                         spellcheck="false"
                         autocorrect="off"
-                        on:input={(event) => commitTerrainDraft(event.detail)}
-                        on:blur={() => commitTerrainDraft(terrainDraft)}
+                        on:blur={() => setTerrainUrl(terrainDraft)}
                     />
                     <div class="field-row">
                         <label class="field">
