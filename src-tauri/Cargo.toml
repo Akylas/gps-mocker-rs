@@ -9,21 +9,34 @@ default-run = "gps_mocker"
 edition = "2021"
 build = "src/build.rs"
 
+# mobile loads the app as a shared library from the platform launcher, so the
+# entrypoint has to be reachable as a lib and not only through main()
+[lib]
+name = "gps_mocker_lib"
+crate-type = [ "staticlib", "cdylib", "rlib" ]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 log = "0.4.15"
-byteorder = "1.4.3"
 serde_json = "1.0"
 serde = { version = "1.0", features = [ "derive" ] }
 tauri = { version = "2", features = [] }
-tauri-plugin-window-state = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-os = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-openssl = "0.10.42"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-window-state = "2"
+
+[target."cfg(target_os = \"android\")".dependencies]
+tauri-plugin-mock-location = { path = "plugins/tauri-plugin-mock-location" }
+
+[target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies]
+cocoa = "0.24"
+objc = "0.2"
 
 [target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies.rusty_libimobiledevice]
 features = [ "static", "vendored" ]
@@ -42,7 +55,3 @@ codegen-units = 1
 lto = true
 incremental = false
 opt-level = "s"
-
-[target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies]
-cocoa = "0.24"
-objc = "0.2"
