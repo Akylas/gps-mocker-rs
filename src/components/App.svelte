@@ -55,7 +55,7 @@
     import Button from './ui/Button.svelte';
     import { resolvedTheme, setThemePreference, type ThemePreference } from '../lib/theme';
     import { followSystemBars } from '../lib/systemBars';
-    import { adbDevices, refreshDevices, resolveSerials, sendLocation, setupCommands, type AdbDevice } from '../lib/adb';
+    import { adbDevices, checkReadiness, refreshDevices, resolveSerials, sendLocation, setupCommands, type AdbDevice } from '../lib/adb';
 
     /* ---------------------------------------------------------------- *
      * platform + settings                                              *
@@ -1210,54 +1210,97 @@
         finish();
     }
 
-    /**
-     * Installs the Android build of this app onto the target, then configures
-     * it. It is the mock provider now — there is no third-party helper.
-     */
-    async function installApk() {
-        startTask($_('task_install_apk'), [{ label: $_('task_install_apk_step') }]);
-        updateStep(0, 'running');
+    /** What the target device still needs, shown next to the Prepare button. */
+    let deviceReadiness: string | undefined;
+
+    async function refreshReadiness() {
+        deviceReadiness = undefined;
         try {
-            const apk = await openDialog({ multiple: false, filters: [{ name: 'APK', extensions: ['apk'] }] });
-            if (!apk) {
-                dismissTask();
-                return;
-            }
             const serials = await resolveSerials($store.adbTarget);
-            for (const serial of serials) {
-                updateStep(0, 'done', await invoke<string>('install_apk', { serial, apkPath: apk as string }));
-            }
+            const results = await Promise.all(serials.map(async (serial) => ({ serial, readiness: await checkReadiness(serial) })));
+            const blocked = results.filter((entry) => !entry.readiness.ready);
+            deviceReadiness = blocked.length === 0 ? $_('device_ready') : blocked.map(({ serial, readiness }) => (serials.length > 1 ? `${serial}: ` : '') + (readiness as any).detail).join(' · ');
         } catch (error) {
-            updateStep(0, 'error', errorMessage(error));
-            finish();
-            return;
+            deviceReadiness = errorMessage(error);
         }
-        finish();
-        // a fresh install has no permissions and no app op; without this the
-        // first fix would just fail
-        await setupAdb();
     }
 
-    async function setupAdb() {
-        // every step is pinned to a serial for the same reason the position
-        // push is: adb refuses a bare command once two devices are attached
+    /**
+     * One action instead of two buttons: look at what the device is missing and
+     * fix exactly that.
+     *
+     * Installing is only offered when the app is genuinely absent, so the usual
+     * case — an app that is there but was never granted anything — never asks
+     * for an APK at all.
+     */
+    async function prepareDevice() {
         let serials: string[];
         try {
             serials = await resolveSerials($store.adbTarget);
         } catch (error) {
-            startTask($_('task_setup_adb'), [{ label: errorMessage(error) }]);
+            startTask($_('task_prepare_device'), [{ label: errorMessage(error) }]);
             updateStep(0, 'error', errorMessage(error));
             finish();
             return;
         }
 
-        // nothing here opens anything on the device
-        const steps = serials.flatMap((serial) => {
+        for (const serial of serials) {
             const on = serials.length > 1 ? ` (${serial})` : '';
-            return setupCommands(serial).map(({ labelKey, command }) => ({ label: $_(labelKey) + on, command }));
-        });
+            const readiness = await checkReadiness(serial);
 
-        return runTask($_('task_setup_adb'), steps);
+            if (readiness.ready) {
+                startTask($_('task_prepare_device'), [{ label: $_('device_ready') + on }]);
+                updateStep(0, 'done');
+                finish();
+                continue;
+            }
+
+            const steps = [
+                ...(readiness.reason === 'not-installed' ? [{ label: $_('task_install_apk_step') + on }] : []),
+                ...setupCommands(serial).map(({ labelKey, command }) => ({ label: $_(labelKey) + on, command })),
+                { label: $_('task_verify_device') + on }
+            ];
+            startTask($_('task_prepare_device'), steps);
+
+            let index = 0;
+            if (readiness.reason === 'not-installed') {
+                updateStep(index, 'running');
+                try {
+                    const apk = await openDialog({ multiple: false, filters: [{ name: 'APK', extensions: ['apk'] }] });
+                    if (!apk) {
+                        dismissTask();
+                        return;
+                    }
+                    updateStep(index, 'done', await invoke<string>('install_apk', { serial, apkPath: apk as string }));
+                } catch (error) {
+                    updateStep(index, 'error', errorMessage(error));
+                    finish();
+                    return;
+                }
+                index += 1;
+            }
+
+            // nothing below opens anything on the device
+            for (const { command } of setupCommands(serial)) {
+                updateStep(index, 'running');
+                const [cmd, ...args] = command.split(' ');
+                try {
+                    const result = await run(cmd, args);
+                    const output = (result.stderr || result.stdout || '').trim();
+                    updateStep(index, result.code === 0 ? 'done' : 'error', output || $_('task_exit_code', { values: { code: result.code } }));
+                } catch (error) {
+                    updateStep(index, 'error', errorMessage(error));
+                }
+                index += 1;
+            }
+
+            updateStep(index, 'running');
+            const after = await checkReadiness(serial);
+            updateStep(index, after.ready ? 'done' : 'error', after.ready ? $_('device_ready') : after.detail);
+            finish();
+        }
+
+        await refreshReadiness();
     }
 
     /* ---------------------------------------------------------------- *
@@ -1336,11 +1379,8 @@
     function listenToMenu() {
         listen<string>('menu', ({ payload }) => {
             switch (payload) {
-                case 'setup':
-                    setupAdb();
-                    break;
-                case 'install_apk':
-                    installApk();
+                case 'prepare_device':
+                    prepareDevice();
                     break;
                 case 'import_gpx':
                     importGpx();
@@ -1558,8 +1598,8 @@
                 {setDarkMapStyle}
                 {patchCostingValues}
                 {resetCostingValues}
-                {installApk}
-                {setupAdb}
+                {prepareDevice}
+                {deviceReadiness}
                 onMockError={reportMockError}
                 adbDevices={$adbDevices}
                 refreshAdbDevices={refreshDevices}
@@ -1711,8 +1751,8 @@
                 {setDarkMapStyle}
                 {patchCostingValues}
                 {resetCostingValues}
-                {installApk}
-                {setupAdb}
+                {prepareDevice}
+                {deviceReadiness}
                 onMockError={reportMockError}
                 adbDevices={$adbDevices}
                 refreshAdbDevices={refreshDevices}

@@ -154,9 +154,9 @@ pub fn build_menu<R: Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Men
     .maximize()
     .build()?;
 
-  let simulator_menu = SubmenuBuilder::new(handle, "Simulator")
-    .item(&MenuItemBuilder::with_id("setup", "Setup").build(handle)?)
-    .item(&MenuItemBuilder::with_id("install_apk", "Install APK").build(handle)?)
+  // one item: the app works out what the device is missing and fixes it
+  let device_menu = SubmenuBuilder::new(handle, "Device")
+    .item(&MenuItemBuilder::with_id("prepare_device", "Prepare Device…").build(handle)?)
     .build()?;
 
   // You should always have a Help menu on macOS because it will automatically
@@ -171,7 +171,7 @@ pub fn build_menu<R: Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Men
     .item(&route_menu)
     .item(&view_menu)
     .item(&window_menu)
-    .item(&simulator_menu)
+    .item(&device_menu)
     .item(&help_menu)
     .build()
 }

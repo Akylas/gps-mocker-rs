@@ -32,8 +32,9 @@
     export let setDarkMapStyle: (url: string) => void;
     export let patchCostingValues: (patch: any) => void;
     export let resetCostingValues: () => void;
-    export let installApk: () => void;
-    export let setupAdb: () => void;
+    export let prepareDevice: () => void;
+    /** what the target still needs, or a ready message; undefined while unknown */
+    export let deviceReadiness: string | undefined = undefined;
     export let onMockError: (error: unknown) => void;
     export let refreshAdbDevices: () => void;
     export let adbDevices: AdbDevice[] = [];
@@ -178,10 +179,14 @@
     <!-- driving a separate Android device needs the helper APK and adb; the
          Android build mocks itself and has neither -->
     <Section title={$_('android_setup')} open={false}>
+        <!-- one action: it looks at what the device is missing and fixes that,
+             so there is nothing to choose between -->
         <div class="actions">
-            <Button size="small" disabled={busy} on:click={installApk}>{$_('task_install_apk')}</Button>
-            <Button size="small" disabled={busy} on:click={setupAdb}>{$_('task_setup_adb')}</Button>
+            <Button size="small" disabled={busy} on:click={prepareDevice}>{$_('task_prepare_device')}</Button>
         </div>
+        {#if deviceReadiness}
+            <p class="hint">{deviceReadiness}</p>
+        {/if}
     </Section>
 {/if}
 

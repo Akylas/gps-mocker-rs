@@ -26,6 +26,15 @@ class MockControlReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
 
+        // `am broadcast` sends an ordered broadcast and prints the result code,
+        // so this is a free channel back to the desktop — no extra adb round
+        // trip to work out why a fix did not land.
+        if (action != MockLocationService.ACTION_STOP && !MockProvider(context).isSelectedAsMockApp()) {
+            Log.w(TAG, "not selected under Developer options > Select mock location app")
+            resultCode = RESULT_NOT_MOCK_APP
+            return
+        }
+
         val forwarded = Intent(context, MockLocationService::class.java).setAction(action)
         intent.extras?.let { forwarded.putExtras(it) }
 
@@ -34,18 +43,29 @@ class MockControlReceiver : BroadcastReceiver() {
                 MockLocationService.ACTION_SET_LOCATION,
                 MockLocationService.ACTION_ACQUIRE -> ContextCompat.startForegroundService(context, forwarded)
                 MockLocationService.ACTION_STOP -> MockLocationService.stop(context)
-                else -> Log.w(TAG, "ignoring unknown action $action")
+                else -> {
+                    Log.w(TAG, "ignoring unknown action $action")
+                    resultCode = RESULT_UNKNOWN_ACTION
+                    return
+                }
             }
+            resultCode = RESULT_OK
         } catch (e: Exception) {
             // Starting a foreground service from the background is refused
-            // unless the app is exempt from battery optimisation, which is what
-            // the desktop's setup step asks for. Say so rather than dying
-            // silently, since adb only ever sees "Broadcast completed".
-            Log.e(TAG, "could not start the mock service — is the app exempt from battery optimisation?", e)
+            // unless the app is exempt from battery optimisation and holds
+            // ACCESS_BACKGROUND_LOCATION, both of which setup arranges.
+            Log.e(TAG, "could not start the mock service", e)
+            resultCode = RESULT_SERVICE_REFUSED
         }
     }
 
     companion object {
         private const val TAG = "MockControlReceiver"
+
+        /** Mirrored in lib/adb.ts, which reads them off `am broadcast`. */
+        const val RESULT_OK = 1
+        const val RESULT_NOT_MOCK_APP = 2
+        const val RESULT_SERVICE_REFUSED = 3
+        const val RESULT_UNKNOWN_ACTION = 4
     }
 }

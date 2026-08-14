@@ -151,6 +151,55 @@ const ACTION_STOP = 'com.akylas.gpsmocker.mocklocation.STOP';
  */
 const INCLUDE_STOPPED = '0x00000020';
 
+/**
+ * Result codes the receiver sets. `am broadcast` is ordered and prints the
+ * code, so the device tells us why a fix did not land without a second adb
+ * round trip. Mirrored from MockControlReceiver.
+ */
+const RESULT_OK = 1;
+const RESULT_NOT_MOCK_APP = 2;
+const RESULT_SERVICE_REFUSED = 3;
+
+/** What a device still needs before it can be mocked. */
+export type Readiness = { ready: true } | { ready: false; reason: 'not-installed' | 'not-mock-app' | 'service-refused' | 'unreachable'; detail: string };
+
+/**
+ * Asks the device where it stands, in one broadcast.
+ *
+ * The receiver answers even from a stopped package, so this doubles as the
+ * install check: no answer at all means the app is not there.
+ */
+export async function checkReadiness(serial: string): Promise<Readiness> {
+    const result = await broadcast(serial, ACTION_ACQUIRE);
+    const code = resultCodeOf(result.stdout);
+
+    if (code === RESULT_OK) {
+        return { ready: true };
+    }
+    if (code === RESULT_NOT_MOCK_APP) {
+        return { ready: false, reason: 'not-mock-app', detail: 'the app is installed but not selected as the mock location app' };
+    }
+    if (code === RESULT_SERVICE_REFUSED) {
+        return { ready: false, reason: 'service-refused', detail: 'the app is not allowed to run its location service in the background' };
+    }
+
+    const installed = await isInstalled(serial);
+    return installed
+        ? { ready: false, reason: 'unreachable', detail: 'the app is installed but did not answer' }
+        : { ready: false, reason: 'not-installed', detail: 'GPS Mocker is not installed on this device' };
+}
+
+export async function isInstalled(serial: string): Promise<boolean> {
+    const result = await Command.create('adb', ['-s', serial, 'shell', 'pm', 'list', 'packages', HELPER_PACKAGE]).execute();
+    return result.code === 0 && result.stdout.includes(HELPER_PACKAGE);
+}
+
+/** `am broadcast` prints `Broadcast completed: result=N`. */
+function resultCodeOf(stdout: string): number | undefined {
+    const match = /result=(-?\d+)/.exec(stdout);
+    return match ? Number(match[1]) : undefined;
+}
+
 function broadcast(serial: string, action: string, extras: string[] = []) {
     return Command.create('adb', ['-s', serial, 'shell', 'am', 'broadcast', '-a', action, '-n', CONTROL_RECEIVER, '-f', INCLUDE_STOPPED, ...extras]).execute();
 }
@@ -219,10 +268,12 @@ export async function sendLocation(position: Position, target: AdbTarget) {
                 throw new Error(`${serial}: ${line.trim()}`);
             }
 
-            // A broadcast that no receiver handled still "completes", so the
-            // result code is the only sign the app is not installed.
-            if (/result=0/.test(result.stdout) === false && /Broadcast completed/.test(result.stdout) === false) {
-                throw new Error(`${serial}: the GPS Mocker app did not answer — install it and run Setup`);
+            // A broadcast nobody handled still "completes", so the result code
+            // is the only honest signal. Anything but OK means the device is
+            // not set up, and it says which part is missing.
+            if (resultCodeOf(result.stdout) !== RESULT_OK) {
+                const readiness = await checkReadiness(serial);
+                throw new Error(readiness.ready ? `${serial}: the fix was not accepted` : `${serial}: ${readiness.detail} — run “Prepare device”`);
             }
         })
     );
