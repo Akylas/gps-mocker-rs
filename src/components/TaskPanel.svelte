@@ -60,12 +60,7 @@
 
 <style lang="scss">
     .task-panel {
-        position: fixed;
-        right: 16px;
-        bottom: 152px;
-        z-index: 9000;
-        width: 380px;
-        max-width: calc(100vw - 32px);
+        width: 100%;
         padding: 12px 16px 14px;
         background: #262626;
         color: #f4f4f4;

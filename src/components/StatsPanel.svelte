@@ -11,7 +11,6 @@
     export let offRoute: number | undefined = undefined;
     export let rejoining: number | undefined = undefined;
     export let collapsed = false;
-    export let hidden = false;
     export let onToggle: () => void;
 
     $: stats = route ? routeStats(route) : undefined;
@@ -25,7 +24,7 @@
     }
 </script>
 
-<div class="stats" class:collapsed class:hidden>
+<div class="stats" class:collapsed>
     <button class="stats-header" type="button" on:click={onToggle} aria-expanded={!collapsed}>
         <span class="stats-title">{$_('live_stats')}</span>
         <span class="stats-chevron" class:flipped={collapsed}><ChevronDown size={16} /></span>
@@ -126,7 +125,7 @@
     .stats {
         position: fixed;
         top: 60px;
-        right: 16px;
+        left: 16px;
         z-index: 8400;
         width: 300px;
         max-width: calc(100vw - 32px);
@@ -134,10 +133,6 @@
         color: #f4f4f4;
         box-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
         backdrop-filter: blur(6px);
-    }
-
-    .stats.hidden {
-        display: none;
     }
 
     .stats-header {

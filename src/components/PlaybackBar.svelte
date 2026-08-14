@@ -144,13 +144,8 @@
 
 <style lang="scss">
     .playback {
-        position: fixed;
-        left: 50%;
-        bottom: 16px;
-        z-index: 8500;
-        width: min(820px, calc(100vw - 32px));
+        width: 100%;
         padding: 10px 14px 12px;
-        transform: translateX(-50%);
         background: rgba(38, 38, 38, 0.96);
         color: #f4f4f4;
         box-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);

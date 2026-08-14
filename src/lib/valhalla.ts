@@ -162,11 +162,13 @@ export interface RouteRequest {
     baseUrl: string;
     locations: Position[];
     costing: Costing;
+    /** the `costing_options` block, already keyed by costing model */
+    costingOptions?: Record<string, unknown>;
     signal?: AbortSignal;
 }
 
 /** Turn-by-turn route through the given waypoints. */
-export async function route({ baseUrl, locations, costing, signal }: RouteRequest): Promise<ValhallaTrip> {
+export async function route({ baseUrl, locations, costing, costingOptions, signal }: RouteRequest): Promise<ValhallaTrip> {
     if (locations.length < 2) {
         throw new Error('a route needs at least two waypoints');
     }
@@ -176,6 +178,7 @@ export async function route({ baseUrl, locations, costing, signal }: RouteReques
         {
             locations: locations.map((l) => ({ lat: l.lat, lon: l.lon })),
             costing,
+            costing_options: costingOptions,
             directions_options: { units: 'kilometers' }
         },
         signal
@@ -190,6 +193,7 @@ export interface MatchRequest {
     baseUrl: string;
     points: Position[];
     costing: Costing;
+    costingOptions?: Record<string, unknown>;
     signal?: AbortSignal;
 }
 
@@ -197,7 +201,7 @@ export interface MatchRequest {
  * Snaps a recorded trace to the road network and returns its manoeuvres. Used
  * to give an imported GPX turn-by-turn data it never had.
  */
-export async function traceRoute({ baseUrl, points, costing, signal }: MatchRequest): Promise<ValhallaTrip> {
+export async function traceRoute({ baseUrl, points, costing, costingOptions, signal }: MatchRequest): Promise<ValhallaTrip> {
     let shape = points;
     if (shape.length > MAX_TRACE_POINTS) {
         // spread the budget evenly rather than truncating the tail
@@ -214,6 +218,7 @@ export async function traceRoute({ baseUrl, points, costing, signal }: MatchRequ
         {
             shape: shape.map((p) => ({ lat: p.lat, lon: p.lon })),
             costing,
+            costing_options: costingOptions,
             shape_match: 'map_snap',
             directions_options: { units: 'kilometers' }
         },

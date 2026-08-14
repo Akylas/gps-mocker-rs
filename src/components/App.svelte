@@ -6,11 +6,12 @@
     import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
     import { type as osType_ } from '@tauri-apps/plugin-os';
     import { Command, open } from '@tauri-apps/plugin-shell';
-    import { Button, Checkbox, Content, Dropdown, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput, Toggle } from 'carbon-components-svelte';
+    import { Button, Checkbox, Content, Header, HeaderAction, HeaderGlobalAction, HeaderPanelDivider, HeaderSearch, HeaderUtilities, SkipToContent, Slider, TextInput, Toggle } from 'carbon-components-svelte';
     import DocumentImport from 'carbon-icons-svelte/lib/DocumentImport.svelte';
     import LocationFilled from 'carbon-icons-svelte/lib/LocationFilled.svelte';
     import DirectionFork from 'carbon-icons-svelte/lib/DirectionFork.svelte';
     import Save from 'carbon-icons-svelte/lib/Save.svelte';
+    import Settings from 'carbon-icons-svelte/lib/Settings.svelte';
     import { KeyboardKeyHold } from 'hold-event';
     import { RulerControl } from 'mapbox-gl-controls';
     import { Map, NavigationControl, TerrainControl } from 'maplibre-gl';
@@ -19,14 +20,16 @@
     import { _ } from 'svelte-i18n';
     import { writable } from 'svelte/store';
     import { destination, distance as distanceBetween, formatDistance, type Position } from '../lib/geo';
+    import { defaultsFor, withDefaults, type CostingValues } from '../lib/costing';
     import { buildGpx, parseGpx } from '../lib/gpx';
     import { deleteRoute as deleteStoredRoute, isTauri, listRoutes, loadRoute, renameRoute as renameStoredRoute, saveRoute, type RouteSummary } from '../lib/library';
     import RouteLayers from '../lib/mapLayers';
     import { createPlayer, DEFAULT_PLAYER_OPTIONS, type PlayerSnapshot } from '../lib/player';
     import { buildRoute, positionAt, routeLength, snapToRoute, type Maneuver, type Route } from '../lib/route';
     import { dismissTask, errorMessage, finishTask, startTask, task, updateStep } from '../lib/tasks';
-    import { COSTING_MODELS, DEFAULT_VALHALLA_URL, route as valhallaRoute, traceRoute, type Costing } from '../lib/valhalla';
+    import { DEFAULT_VALHALLA_URL, route as valhallaRoute, traceRoute, type Costing } from '../lib/valhalla';
     import MapboxGLButtonControl from './MapboxGLButtonControl';
+    import CostingOptions from './CostingOptions.svelte';
     import PlaybackBar from './PlaybackBar.svelte';
     import RouteLibrary from './RouteLibrary.svelte';
     import StatsPanel from './StatsPanel.svelte';
@@ -82,6 +85,9 @@
         // routing
         valhallaUrl: DEFAULT_VALHALLA_URL,
         costing: 'auto' as Costing,
+        /** per-profile valhalla costing options, keyed by costing model */
+        costingOptions: {} as Record<string, CostingValues>,
+        builderOptionsOpen: true,
         autoComputeManeuvers: false,
         snapToRoads: true,
         autoReroute: true,
@@ -381,7 +387,8 @@
             const trip = await valhallaRoute({
                 baseUrl: settings.valhallaUrl,
                 locations: [from, to],
-                costing: settings.costing
+                costing: settings.costing,
+                costingOptions: costingOptionsBlock()
             });
             points = trip.points;
         } catch (error) {
@@ -590,6 +597,30 @@
         }
     }
 
+    /** The `costing_options` block for whichever profile is selected. */
+    function costingOptionsBlock() {
+        return { [settings.costing]: withDefaults(settings.costing, settings.costingOptions?.[settings.costing]) };
+    }
+
+    /** Merges against the store rather than a component-local copy. */
+    function patchCostingValues(patch: CostingValues) {
+        const costing = settings.costing;
+        const merged = { ...withDefaults(costing, settings.costingOptions?.[costing]), ...patch };
+        $store.costingOptions = { ...(settings.costingOptions || {}), [costing]: merged };
+        recomputeBuilderRoute();
+    }
+
+    function resetCostingValues() {
+        $store.costingOptions = { ...(settings.costingOptions || {}), [settings.costing]: defaultsFor(settings.costing) };
+        recomputeBuilderRoute();
+    }
+
+    function recomputeBuilderRoute() {
+        if (routeBuilderMode && waypoints.length >= 2) {
+            scheduleWaypointRoute();
+        }
+    }
+
     const scheduleWaypointRoute = debounce(() => computeWaypointRoute(), 400);
 
     async function computeWaypointRoute() {
@@ -601,7 +632,8 @@
             const trip = await valhallaRoute({
                 baseUrl: settings.valhallaUrl,
                 locations: waypoints,
-                costing: settings.costing
+                costing: settings.costing,
+                costingOptions: costingOptionsBlock()
             });
             builderPreview = withManeuverDistances(
                 buildRoute({
@@ -671,7 +703,8 @@
             const trip = await traceRoute({
                 baseUrl: settings.valhallaUrl,
                 points: source.points,
-                costing: settings.costing
+                costing: settings.costing,
+                costingOptions: costingOptionsBlock()
             });
 
             // Map matching gives up on anything the road graph does not know:
@@ -1132,7 +1165,6 @@
      * derived view state                                               *
      * ---------------------------------------------------------------- */
 
-    $: costingItems = COSTING_MODELS.map((id) => ({ id, text: $_(`costing_${id}`) }));
     $: builderLength = builderPreview ? routeLength(builderPreview) : 0;
     // a detour that is only queued still reads as "off route": you have to press
     // play before anything drives back
@@ -1192,7 +1224,17 @@
                     <HeaderPanelDivider />
                     <h4>{$_('routing')}</h4>
                     <TextInput bind:value={$store.valhallaUrl} labelText={$_('valhalla_url')} placeholder={DEFAULT_VALHALLA_URL} autocomplete="off" spellcheck="false" autocorrect="off" />
-                    <Dropdown titleText={$_('costing')} items={costingItems} bind:selectedId={$store.costing} />
+                    <!-- the same panel the route builder shows, so one set of
+                         options drives building, rerouting and map matching -->
+                    <div class="drawer-costing">
+                        <CostingOptions
+                            costing={$store.costing}
+                            values={$store.costingOptions?.[$store.costing]}
+                            onCosting={(next) => ($store.costing = next)}
+                            onChange={patchCostingValues}
+                            onReset={resetCostingValues}
+                        />
+                    </div>
                     <Checkbox bind:checked={$store.autoComputeManeuvers} labelText={$_('auto_compute_maneuvers')} />
                     <Checkbox bind:checked={$store.snapToRoads} labelText={$_('snap_to_roads')} />
                     <Checkbox bind:checked={$store.autoReroute} labelText={$_('auto_reroute')} />
@@ -1225,9 +1267,7 @@
         <div style:pointer-events="auto" class="mapfull" id="map" bind:this={mapContainer} style="align-self:flex-end;margin: 0px;" />
     </Content>
 
-    <!-- the settings panel slides in over the same corner -->
     <StatsPanel
-        hidden={drawerOpened}
         route={activeRoute}
         {snapshot}
         position={currentPosition}
@@ -1237,39 +1277,69 @@
         onToggle={() => ($store.statsCollapsed = !$store.statsCollapsed)}
     />
 
-    {#if routeBuilderMode}
-        <div class="builder">
-            <div class="builder-text">
-                <strong>{$_('build_route')}</strong>
-                <span>{$_('build_route_hint')}</span>
-                {#if buildingRoute}
-                    <span class="builder-status">{$_('computing')}…</span>
-                {:else if builderPreview}
-                    <span class="builder-status">{formatDistance(builderLength)} · {builderPreview.maneuvers?.length ?? 0} {$_('maneuvers')}</span>
-                {/if}
-            </div>
-            <div class="builder-actions">
-                <Button
-                    size="small"
-                    kind="ghost"
-                    disabled={waypoints.length === 0}
-                    on:click={() => {
-                        waypoints = waypoints.slice(0, -1);
-                        layers?.setWaypoints(waypoints);
-                        if (waypoints.length >= 2) scheduleWaypointRoute();
-                        else {
-                            builderPreview = undefined;
-                            layers?.setRoute(activeRoute);
-                        }
-                    }}>{$_('undo')}</Button
-                >
-                <Button size="small" kind="ghost" on:click={() => toggleRouteBuilder(false)}>{$_('cancel')}</Button>
-                <Button size="small" disabled={!builderPreview} on:click={acceptBuiltRoute}>{$_('use_route')}</Button>
-            </div>
-        </div>
-    {/if}
+    <!-- one dock so the builder and the transport bar stack against the bottom
+         edge instead of each guessing the other's height -->
+    <div class="bottom-dock">
+        <TaskPanel task={$task} onDismiss={dismissTask} />
 
-    <PlaybackBar
+        {#if routeBuilderMode}
+            {#if $store.builderOptionsOpen}
+                <div class="builder-options">
+                    <CostingOptions
+                        compact
+                        costing={$store.costing}
+                        values={$store.costingOptions?.[$store.costing]}
+                        onCosting={(next) => {
+                            $store.costing = next;
+                            if (waypoints.length >= 2) scheduleWaypointRoute();
+                        }}
+                        onChange={patchCostingValues}
+                        onReset={resetCostingValues}
+                    />
+                </div>
+            {/if}
+            <div class="builder">
+                <div class="builder-text">
+                    <strong>{$_('build_route')}</strong>
+                    <span>{$_('build_route_hint')}</span>
+                    {#if buildingRoute}
+                        <span class="builder-status">{$_('computing')}…</span>
+                    {:else if builderPreview}
+                        <span class="builder-status">{formatDistance(builderLength)} · {builderPreview.maneuvers?.length ?? 0} {$_('maneuvers')}</span>
+                    {/if}
+                </div>
+                <div class="builder-actions">
+                    <button
+                        type="button"
+                        class="builder-options-toggle"
+                        class:open={$store.builderOptionsOpen}
+                        aria-expanded={$store.builderOptionsOpen}
+                        on:click={() => ($store.builderOptionsOpen = !$store.builderOptionsOpen)}
+                    >
+                        <Settings size={16} />
+                        <span>{$_(`costing_${$store.costing}`)}</span>
+                    </button>
+                    <Button
+                        size="small"
+                        kind="ghost"
+                        disabled={waypoints.length === 0}
+                        on:click={() => {
+                            waypoints = waypoints.slice(0, -1);
+                            layers?.setWaypoints(waypoints);
+                            if (waypoints.length >= 2) scheduleWaypointRoute();
+                            else {
+                                builderPreview = undefined;
+                                layers?.setRoute(activeRoute);
+                            }
+                        }}>{$_('undo')}</Button
+                    >
+                    <Button size="small" kind="ghost" on:click={() => toggleRouteBuilder(false)}>{$_('cancel')}</Button>
+                    <Button size="small" disabled={!builderPreview} on:click={acceptBuiltRoute}>{$_('use_route')}</Button>
+                </div>
+            </div>
+        {/if}
+
+        <PlaybackBar
         route={activeRoute}
         {snapshot}
         speedMultiplier={$store.speedMultiplier}
@@ -1286,11 +1356,10 @@
         onClear={clearRoute}
         onFit={() => layers?.fitRoute()}
         onSave={saveActiveRoute}
-        onComputeManeuvers={computeManeuvers}
-        computing={computingManeuvers}
-    />
-
-    <TaskPanel task={$task} onDismiss={dismissTask} />
+            onComputeManeuvers={computeManeuvers}
+            computing={computingManeuvers}
+        />
+    </div>
 
     <RouteLibrary
         bind:open={libraryOpen}
@@ -1324,21 +1393,61 @@
         margin-top: 12px;
     }
 
-    .builder {
+    /* Everything pinned to the bottom lives in one column, so panels stack
+       against the edge instead of each hard-coding the other's height. */
+    .bottom-dock {
         position: fixed;
         left: 50%;
-        bottom: 132px;
-        z-index: 8600;
+        bottom: 16px;
+        z-index: 8500;
+        display: flex;
+        width: min(880px, calc(100vw - 32px));
+        flex-direction: column;
+        gap: 8px;
+        transform: translateX(-50%);
+        pointer-events: none;
+    }
+    .bottom-dock > :global(*) {
+        pointer-events: auto;
+    }
+
+    .builder-options {
+        padding: 10px 14px;
+        background: rgba(38, 38, 38, 0.97);
+        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(6px);
+    }
+
+    .builder {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        width: min(820px, calc(100vw - 32px));
         padding: 10px 14px;
-        transform: translateX(-50%);
         background: rgba(15, 98, 254, 0.95);
         color: #fff;
         box-shadow: 0 2px 16px rgba(0, 0, 0, 0.4);
+    }
+    .builder-options-toggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        background: none;
+        color: #fff;
+        cursor: pointer;
+        font-size: 11px;
+    }
+    .builder-options-toggle:hover,
+    .builder-options-toggle.open {
+        background: rgba(0, 0, 0, 0.3);
+    }
+
+    .drawer-costing {
+        margin: 8px 0 4px;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.35);
     }
     .builder-text {
         display: flex;

@@ -206,7 +206,7 @@ export default class RouteLayers {
     }
 
     /** Frames the route, leaving room for the panels pinned to the edges. */
-    fitRoute(padding = { top: 80, bottom: 190, left: 80, right: 380 }) {
+    fitRoute(padding = { top: 80, bottom: 210, left: 350, right: 80 }) {
         if (!this.route) {
             return;
         }
