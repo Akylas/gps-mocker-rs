@@ -5,9 +5,15 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to release, without the leading v. Defaults to the newest entry in CHANGELOG.md.'
-        required: false
+      bump:
+        description: 'How much to bump the version. `auto` reads the conventional commits since the last tag and decides.'
+        type: choice
+        default: auto
+        options:
+          - auto
+          - patch
+          - minor
+          - major
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +21,9 @@ env:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    # a manual run writes the release commit and tag back to the branch
+    permissions:
+      contents: write
     outputs:
       RELEASE_UPLOAD_ID: ${{ steps.create_release.outputs.id }}
       # the Android job uploads by tag rather than by id
@@ -25,27 +34,50 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      # A manual run has no tag to read a version off — GITHUB_REF is then the
-      # branch, and stripping `refs/tags/v` off it leaves it whole, which is how
-      # the changelog step ended up looking for an entry called
-      # `refs/heads/master`.
+        with:
+          # standard-version reads the tags and the commits since the last one
+          # to work out an `auto` bump, and there is nothing to read in a
+          # shallow clone
+          fetch-depth: 0
+
+      # A tag push arrives with the version already decided and written down. A
+      # manual run has neither, so it cuts the release here: standard-version
+      # bumps src-tauri/Cargo.toml — see .versionrc.js, that file is where this
+      # project keeps its version — writes the CHANGELOG entry the next step
+      # goes looking for, commits and tags.
+      #
+      # Pushing with GITHUB_TOKEN does not start another workflow run, so the
+      # `v*` tag this creates cannot set the whole thing going a second time.
+      - name: Cut the release commit and tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          # through the environment rather than inlined into the script: an
+          # input is whatever the person who started the run chose
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$BUMP" = auto ]; then
+            npx -y standard-version@9
+          else
+            npx -y standard-version@9 --release-as "$BUMP"
+          fi
+          git push --follow-tags origin "HEAD:$GITHUB_REF_NAME"
+
       - name: Work out which version is being released
         id: tag_name
-        env:
-          # through the environment rather than inlined: a workflow input is
-          # whatever the person who ran it typed
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           case "$GITHUB_REF" in
+            # a tag push says so itself
             refs/tags/v*) version="${GITHUB_REF#refs/tags/v}" ;;
-            *) version="$INPUT_VERSION" ;;
+            # otherwise it is the tag the step above just wrote
+            *) version=$(git describe --tags --abbrev=0) ;;
           esac
+          version="${version#v}"
           if [ -z "$version" ]; then
-            version=$(sed -nE 's/^## \[?([0-9]+\.[0-9]+\.[0-9]+[^]]*)\]?.*/\1/p' CHANGELOG.md | head -n 1)
-          fi
-          if [ -z "$version" ]; then
-            echo "no version on the ref, in the inputs, or at the top of CHANGELOG.md" >&2
+            echo "no version on the ref and no tag to read one off" >&2
             exit 1
           fi
           echo "releasing $version"
@@ -99,6 +131,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: true
+          # the tag, not the commit the run started from: a manual run bumps
+          # the version after that commit, and the bundles carry it
+          ref: ${{ needs.create-release.outputs.RELEASE_TAG }}
 
       # Tauri v2 links against the 4.1 webkit2gtk, not the 4.0 the v1 template
       # installed, and against the ayatana fork of libappindicator
@@ -172,6 +207,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: true
+          # same as the desktop job: build the tag that is being released
+          ref: ${{ needs.create-release.outputs.RELEASE_TAG }}
 
       - name: Java setup
         uses: actions/setup-java@v5
