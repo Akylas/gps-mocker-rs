@@ -342,25 +342,28 @@ jobs:
     # skipped dependency would otherwise take the publish step down with it
     if: ${{ always() && needs.create-release.result == 'success' && needs.build-tauri.result == 'success' && needs.build-android.result != 'failure' }}
     steps:
-      - name: Update release
-        uses: irongut/EditRelease@v1.2.0
+      - name: Publish release as latest
+        uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          id: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}
+          tag: ${{ needs.create-release.outputs.RELEASE_TAG }}
           draft: false
+          makeLatest: true
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
 
-  # If any build job fails, undo the version bump that was already pushed:
-  # delete the release tag and force-reset the branch back to the commit that
-  # existed before standard-version ran. Only relevant for workflow_dispatch
-  # runs, because a tag-push run has nothing to undo.
+  # If any build job fails, delete the draft release and clean up the tag. For
+  # workflow_dispatch runs, also revert the version-bump commit that was already
+  # pushed. Tag-push runs have nothing to revert, but we still want the draft
+  # release and the tag gone so the version can be re-released later.
   cleanup-on-failure:
     runs-on: ubuntu-latest
     needs: [create-release, build-tauri, build-android]
     if: >-
       ${{ always()
-          && github.event_name == 'workflow_dispatch'
           && needs.create-release.result == 'success'
-          && needs.create-release.outputs.PRE_BUMP_SHA != ''
           && (needs.build-tauri.result == 'failure' || needs.build-android.result == 'failure') }}
     permissions:
       contents: write
@@ -368,7 +371,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Delete tag and revert version bump commit
+      - name: Delete tag and revert version bump commit (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch' && needs.create-release.outputs.PRE_BUMP_SHA != ''
         env:
           RELEASE_TAG: ${{ needs.create-release.outputs.RELEASE_TAG }}
           PRE_BUMP_SHA: ${{ needs.create-release.outputs.PRE_BUMP_SHA }}
@@ -380,10 +384,17 @@ jobs:
           git push --delete origin "$RELEASE_TAG" || true
           # Force-reset the branch to the commit before standard-version ran
           git push --force origin "$PRE_BUMP_SHA:$GITHUB_REF_NAME"
+      - name: Delete tag (tag-push only)
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ needs.create-release.outputs.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          # Delete the tag remotely (ignore error if it was never pushed or already gone)
+          git push --delete origin "$RELEASE_TAG" || true
       - name: Delete the draft GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ needs.create-release.outputs.RELEASE_TAG }}
         run: |
           release_id="${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}"
           if [ -n "$release_id" ]; then
