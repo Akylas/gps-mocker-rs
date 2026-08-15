@@ -19,11 +19,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../resources/settings_apk-debug.apk": "settings_apk-debug.apk"
-    },
     "externalBin": [],
-    "copyright": "© 2021 Akylas",
+    "copyright": "\u00a9 2021 Akylas",
     "category": "DeveloperTool",
     "shortDescription": "",
     "longDescription": "",
@@ -38,6 +35,9 @@
       "deb": {
         "depends": []
       }
+    },
+    "android": {
+      "minSdkVersion": 26
     }
   },
   "build": {
@@ -51,8 +51,23 @@
   "identifier": "com.akylas.gpsmocker",
   "plugins": {},
   "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "GPS Mocker",
+        "width": 800,
+        "height": 650,
+        "minWidth": 300,
+        "minHeight": 300,
+        "resizable": true,
+        "decorations": true,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "fullscreen": false
+      }
+    ],
     "security": {
-      "csp": "default-src blob: data: filesystem: ws: wss: http: https: tauri: 'unsafe-eval' 'unsafe-inline' 'self' img-src: 'self'; worker-src blob:; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self' tauri: blob: data: filesystem: 'unsafe-eval' 'unsafe-inline'; img-src 'self' tauri: blob: data: http: https:; connect-src 'self' ipc: http://ipc.localhost blob: data: http: https: ws: wss:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   }
 }

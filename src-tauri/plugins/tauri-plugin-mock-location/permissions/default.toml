@@ -1,0 +1,21 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+Allows the app to inspect mock-provider status, open the developer settings
+screen, and drive Android's test location providers.
+"""
+permissions = [
+  "allow-check-status",
+  "allow-open-developer-settings",
+  "allow-start-mocking",
+  "allow-stop-mocking",
+  "allow-push-location",
+  "allow-set-route",
+  "allow-set-playback",
+  "allow-set-notification-mode",
+  "allow-set-system-bars",
+  # the generator does not kebab-case a camelCase command, so the identifier
+  # keeps the name the mobile bridge actually invokes
+  "allow-registerListener",
+]

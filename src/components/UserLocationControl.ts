@@ -180,7 +180,7 @@ export default class UserLocationControl extends Evented implements IControl {
                 this._updateCamera(position);
             }
         }
-        if (this.options.showUserLocation) {
+        if (this.options.showUserLocation && this._dotElement) {
             this._dotElement.classList.remove('maplibregl-user-location-dot-stale', 'mapboxgl-user-location-dot-stale');
         }
 
@@ -215,6 +215,11 @@ export default class UserLocationControl extends Evented implements IControl {
      * @private
      */
     _updateMarker(position?: Position | null) {
+        // _setupUI runs behind an async permissions check, so a position can
+        // arrive before the markers exist; _setupUI replays the last one
+        if (!this._userLocationDotMarker || !this._accuracyCircleMarker) {
+            return;
+        }
         if (position) {
             const center = new LngLat(position.lon, position.lat);
             this._accuracyCircleMarker.setLngLat(center).addTo(this._map);
@@ -267,6 +272,11 @@ export default class UserLocationControl extends Evented implements IControl {
         }
 
         this._setup = true;
+
+        // catch up with anything that arrived while the permissions check ran
+        if (this._lastKnownPosition && this.options.showUserLocation) {
+            this._updateMarker(this._lastKnownPosition);
+        }
 
         // when the camera is changed (and it's not as a result of the Geolocation Control) change
         // the watch mode to background watch, so that the marker is updated but not the camera.

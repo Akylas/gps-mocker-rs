@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ACCESS_MOCK_LOCATION is not granted at runtime: the user picks this app
+         under Developer options → "Select mock location app". Declaring it is
+         what makes the app show up in that list. -->
+    <uses-permission
+        android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="MockLocation,ProtectedPermissions" />
+
+    <!-- a location-type foreground service may only start while the app holds a
+         location permission, so this one *is* requested at runtime -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Location is a foreground-only permission, so a `location` foreground
+         service cannot be started while the app is in the background. The usual
+         path does not need this — on-device playback starts the service from
+         the app's own screen, and a desktop driving us over adb starts no
+         service at all — but the notification's own Play button can, so the
+         desktop's setup grants it with `pm grant` and it is never prompted
+         for. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name=".MockLocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- The adb control surface. Exported so a desktop can reach it, but
+             gated on WRITE_SECURE_SETTINGS, which the shell holds and no
+             ordinary app can be granted. -->
+        <receiver
+            android:name=".MockControlReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="com.akylas.gpsmocker.mocklocation.SET_LOCATION" />
+                <action android:name="com.akylas.gpsmocker.mocklocation.ACQUIRE" />
+                <action android:name="com.akylas.gpsmocker.mocklocation.STOP" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

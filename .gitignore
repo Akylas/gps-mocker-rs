@@ -19,3 +19,6 @@ src-tauri/plugins/*/android
 
 # Tauri copies bundle.resources into the Android assets on every build
 src-tauri/gen/android
+
+# Tauri copies bundle.resources into the Android assets on every build
+src-tauri/gen/android/app/src/main/assets/

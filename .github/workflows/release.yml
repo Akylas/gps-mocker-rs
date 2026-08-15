@@ -13,20 +13,34 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       RELEASE_UPLOAD_ID: ${{ steps.create_release.outputs.id }}
+      # the Android job uploads by tag rather than by id
+      RELEASE_TAG: v${{ steps.changelog_reader.outputs.version }}
+      # a job-level `if` cannot read the secrets context, so the answer is
+      # worked out here and passed along
+      HAS_ANDROID_KEY: ${{ steps.android_key.outputs.present }}
 
     steps:
-      - uses: actions/checkout@v2
-      - name: setup node
-        uses: actions/setup-node@v1
-        with:
-          node-version: 16
+      - uses: actions/checkout@v7
       - name: Get version from tag
         id: tag_name
         run: |
-          echo ::set-output name=current_version::${GITHUB_REF#refs/tags/v}
+          # `set-output` was turned off on the runners in 2023
+          echo "current_version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Is there an Android signing key?
+        id: android_key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Get Changelog Entry
         id: changelog_reader
-        uses: Akylas/changelog-reader-action@v2
+        # upstream rather than the fork: the fork is still a node12 action, and
+        # the runners no longer have a node that old
+        uses: mindsers/changelog-reader-action@v2
         with:
           version: ${{ steps.tag_name.outputs.current_version }}
           path: ./CHANGELOG.md
@@ -57,38 +71,41 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
         with:
           submodules: true
-      
+
+      # Tauri v2 links against the 4.1 webkit2gtk, not the 4.0 the v1 template
+      # installed, and against the ayatana fork of libappindicator
       - name: Install webkit2gtk (ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev webkit2gtk-4.0 libappindicator3-dev librsvg2-dev patchelf
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+
+      # node first, so the install below builds against the version the app is
+      # actually released on. No `cache:` anywhere: nothing commits a JS
+      # lockfile, and both cache implementations hash one to key the cache.
+      - name: Node.js setup
+        uses: actions/setup-node@v7
         with:
-          version: 7
+          node-version: 20.x
+          registry-url: https://registry.npmjs.org/
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
           run_install: |
             - args: [--no-frozen-lockfile]
-      - name: Node.js setup
-        uses: actions/setup-node@v2
-        with:
-          node-version: 16.x
-          registry-url: https://registry.npmjs.org/
-          cache: 'pnpm'
 
       - name: Rust setup
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      
-      - uses: Swatinem/rust-cache@v1
-        with:
-          working-directory: "src-tauri"
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: tauri-apps/tauri-action@dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
@@ -100,12 +117,134 @@ jobs:
           APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
         with:
           releaseId: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}
+
+  # The desktop app installs this APK onto a device over adb, so it has to be a
+  # release asset with a stable name: see ensure_helper_apk in src-tauri/src/desktop.rs.
+  #
+  # Needs four repository secrets. Skipped without them, because an unsigned APK
+  # cannot be installed and a debug-signed one would carry a different key on
+  # every run, which Android refuses to accept as an update — preparing a device
+  # then falls back to picking an APK by hand.
+  #
+  #   keytool -genkeypair -v -keystore release.keystore -alias gps-mocker \
+  #     -keyalg RSA -keysize 2048 -validity 10000
+  #   base64 -i release.keystore | pbcopy
+  #
+  # ANDROID_KEYSTORE          the base64 above
+  # ANDROID_KEYSTORE_PASSWORD the store password
+  # ANDROID_KEY_ALIAS         gps-mocker
+  # ANDROID_KEY_PASSWORD      the key password, if it differs from the store one
+  #
+  # Keep that keystore: losing it means no one can update an installed copy.
+  build-android:
+    needs: create-release
+    if: ${{ needs.create-release.outputs.HAS_ANDROID_KEY == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.3.13750724
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Java setup
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK setup
+        uses: android-actions/setup-android@v4
+
+      - name: Install the NDK
+        run: sdkmanager --install "ndk;${NDK_VERSION}"
+
+      - name: Node.js setup
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20.x
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+          run_install: |
+            - args: [--no-frozen-lockfile]
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Write the signing config
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd src-tauri/gen/android
+          echo "$ANDROID_KEYSTORE" | base64 --decode > release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=$(pwd)/release.keystore
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}
+          EOF
+
+      - name: Build the APK
+        run: |
+          # ANDROID_SDK_ROOT is set by the runner image, which puts it out of
+          # reach of the `env` expression context
+          export NDK_HOME="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          pnpm tauri android build --apk
+
+      - name: Collect the APK
+        id: apk
+        run: |
+          # one universal APK covers every ABI, so the desktop never has to work
+          # out what the attached device is
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release*.apk' | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "no release APK was produced" >&2
+            exit 1
+          fi
+          case "$apk" in
+            *unsigned*)
+              echo "the APK is unsigned, so it could not be installed: check the signing secrets" >&2
+              exit 1
+              ;;
+          esac
+          cp "$apk" gps-mocker-android.apk
+          echo "path=gps-mocker-android.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Attach the APK to the release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ needs.create-release.outputs.RELEASE_TAG }}
+          artifacts: ${{ steps.apk.outputs.path }}
+          allowUpdates: true
+          # the release is still a draft at this point and stays one until
+          # update-release publishes it
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitDraftDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
+
   update-release:
     runs-on: ubuntu-latest
-    needs: [create-release, build-tauri]
+    needs: [create-release, build-tauri, build-android]
+    # build-android is skipped when the repository has no signing key, and a
+    # skipped dependency would otherwise take the publish step down with it
+    if: ${{ always() && needs.create-release.result == 'success' && needs.build-tauri.result == 'success' && needs.build-android.result != 'failure' }}
     steps:
       - name: Update release
-        uses: irongut/EditRelease@v1.1.0
+        uses: irongut/EditRelease@v1.2.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           id: ${{ needs.create-release.outputs.RELEASE_UPLOAD_ID }}

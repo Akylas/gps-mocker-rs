@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-push-location"
+description = "Enables the push_location command without any pre-configured scope."
+commands.allow = ["push_location"]
+
+[[permission]]
+identifier = "deny-push-location"
+description = "Denies the push_location command without any pre-configured scope."
+commands.deny = ["push_location"]

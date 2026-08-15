@@ -32,6 +32,27 @@
     "os:allow-arch",
     "os:allow-exe-extension",
     "os:allow-locale",
-    "os:allow-hostname"
+    "os:allow-hostname",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    }
   ]
 }
