@@ -94,12 +94,14 @@ export default class UserLocationControl extends Evented implements IControl {
     _accuracyCircleMarker: Marker;
     _accuracy: number;
     _setup: boolean; // set to true once the control has been setup
+    /** pending frame for _reproject, so a burst of tile events costs one */
+    _reprojectFrame: number | null = null;
 
     constructor(options: GeolocateOptions = {}) {
         super();
         this.options = extend({}, defaultOptions, options);
 
-        bindAll(['_onSuccess', '_onError', '_onZoom', '_finish', '_setupUI', '_updateCamera', '_updateMarker'], this);
+        bindAll(['_onSuccess', '_onError', '_onZoom', '_onTerrainData', '_reproject', '_finish', '_setupUI', '_updateCamera', '_updateMarker'], this);
     }
 
     onAdd(map: Map) {
@@ -120,6 +122,12 @@ export default class UserLocationControl extends Evented implements IControl {
 
         DOM.remove(this._container);
         this._map.off('zoom', this._onZoom);
+        this._map.off('terrain', this._reproject);
+        this._map.off('data', this._onTerrainData);
+        if (this._reprojectFrame !== null) {
+            cancelAnimationFrame(this._reprojectFrame);
+            this._reprojectFrame = null;
+        }
         this._map = undefined;
     }
 
@@ -250,6 +258,44 @@ export default class UserLocationControl extends Evented implements IControl {
         }
     }
 
+    /**
+     * A marker is a DOM element placed by projecting its coordinate, and with 3D
+     * terrain on that projection depends on the elevation under it. maplibre
+     * re-projects markers on `move` — but not when the ground itself moves, and
+     * with terrain it moves constantly: the DEM tiles land seconds after the
+     * marker was first placed, again at every new zoom level, and again whenever
+     * the source or the exaggeration changes.
+     *
+     * Left alone the dot keeps the height it was first drawn at, which over a
+     * pitched valley leaves it hanging in the sky. This is the missing "and when
+     * the ground moves under it".
+     */
+    _onTerrainData(event: any) {
+        const terrain = this._map.getTerrain?.() as { source?: string } | null;
+        // metadata is the TileJSON arriving, which carries no elevation
+        if (!terrain || !event.sourceId || event.sourceId !== terrain.source || event.sourceDataType === 'metadata') {
+            return;
+        }
+        if (this._reprojectFrame === null) {
+            this._reprojectFrame = requestAnimationFrame(this._reproject);
+        }
+    }
+
+    /**
+     * Re-runs the projection at the position the markers already hold.
+     * `setLngLat` rather than `_updateMarker`, so a stream of tiles does not
+     * take the elements out of the DOM and put them back on every frame.
+     */
+    _reproject() {
+        this._reprojectFrame = null;
+        if (!this._map || !this._lastKnownPosition || !this._userLocationDotMarker) {
+            return;
+        }
+        const center = new LngLat(this._lastKnownPosition.lon, this._lastKnownPosition.lat);
+        this._userLocationDotMarker.setLngLat(center);
+        this._accuracyCircleMarker.setLngLat(center);
+    }
+
     _setupUI() {
         this._container.addEventListener('contextmenu', (e: MouseEvent) => e.preventDefault());
 
@@ -269,6 +315,10 @@ export default class UserLocationControl extends Evented implements IControl {
             if (this.options.trackUserLocation) this._watchState = 'OFF';
 
             this._map.on('zoom', this._onZoom);
+            // `terrain` covers being switched on, off or re-exaggerated; `data`
+            // covers the DEM tiles that decide how high the ground actually is
+            this._map.on('terrain', this._reproject);
+            this._map.on('data', this._onTerrainData);
         }
 
         this._setup = true;

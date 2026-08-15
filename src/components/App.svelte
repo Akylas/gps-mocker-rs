@@ -604,7 +604,18 @@
                 style: appliedStyleUrl,
                 center: settings.position,
                 zoom: 14,
-                maxPitch: 85
+                maxPitch: 85,
+                // One world, not a repeating strip of them. A route is a single
+                // place, so the copies were only ever drawing it twice — and
+                // they are what makes a pitched terrain view throw: maplibre
+                // moves a marker into whichever copy is nearest its last screen
+                // position, and at a high pitch a copy a whole world away still
+                // lands on screen, so it stays there. The elevation lookup then
+                // builds a tile id from that out-of-range longitude and throws
+                // `x=… outside of bounds` from inside a `move` listener, which
+                // aborts the marker update for good: the next one starts from
+                // the same stale position and throws again.
+                renderWorldCopies: false
             });
 
             layers = new RouteLayers(map);
