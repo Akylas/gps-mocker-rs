@@ -1,6 +1,6 @@
 [package]
 name = "gps_mocker"
-version = "2.1.0"
+version = "2.2.0"
 description = "Send Mocked GPS to Android/iOS devices"
 authors = [ "Akylas <dev@akylas.fr>" ]
 license = "MIT"
@@ -9,20 +9,18 @@ default-run = "gps_mocker"
 edition = "2021"
 build = "src/build.rs"
 
-# mobile loads the app as a shared library from the platform launcher, so the
-# entrypoint has to be reachable as a lib and not only through main()
 [lib]
 name = "gps_mocker_lib"
 crate-type = [ "staticlib", "cdylib", "rlib" ]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = [ ] }
 
 [dependencies]
 log = "0.4.15"
 serde_json = "1.0"
 serde = { version = "1.0", features = [ "derive" ] }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = [ ] }
 tauri-plugin-shell = "2"
 tauri-plugin-os = "2"
 tauri-plugin-dialog = "2"
@@ -33,8 +31,6 @@ tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-window-state = "2"
-# fetches the Android build from the GitHub release; rustls so a Linux desktop
-# build does not need OpenSSL headers
 reqwest = { version = "0.12", default-features = false, features = [ "rustls-tls", "json" ] }
 
 [target."cfg(target_os = \"android\")".dependencies]
@@ -44,12 +40,9 @@ tauri-plugin-mock-location = { path = "plugins/tauri-plugin-mock-location" }
 cocoa = "0.24"
 objc = "0.2"
 
-[target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies.rusty_libimobiledevice]
-features = [ "static", "vendored" ]
-# Local fork of https://github.com/jkcoxson/rusty_libimobiledevice @ b6cdf4bb
-# Only change: build.rs pins the vendored libimobiledevice clone to tag 1.3.0
-# (master requires libtatsu, which the vendored chain does not build).
-path = "vendor/rusty_libimobiledevice"
+  [target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies.rusty_libimobiledevice]
+  features = [ "static", "vendored" ]
+  path = "vendor/rusty_libimobiledevice"
 
 [features]
 default = [ "custom-protocol" ]
