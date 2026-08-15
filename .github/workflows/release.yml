@@ -166,6 +166,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
 
+      - name: Install autotools (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: brew install autoconf automake libtool
+
       # node first, so the install below builds against the version the app is
       # actually released on. No `cache:` anywhere: nothing commits a JS
       # lockfile, and both cache implementations hash one to key the cache.
