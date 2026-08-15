@@ -1,0 +1,43 @@
+name: Pages
+
+# The site is plain HTML in docs/ — no build step, no generator. This workflow
+# exists only so that GitHub serves it, and so that the same commit that changes
+# the site publishes it.
+#
+# One-time setup: Settings → Pages → Build and deployment → Source: GitHub
+# Actions. Without that, this workflow's deploy step has nothing to deploy to.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  # so the site can be republished without touching it
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# a queued run supersedes a waiting one, but never interrupts a deploy already
+# under way
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4

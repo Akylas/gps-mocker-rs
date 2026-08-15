@@ -1,0 +1,53 @@
+GPS Mocker envoie une position fictive à votre appareil — un point posé sur la
+carte, ou tout un itinéraire rejoué à une vitesse qui se comporte comme un vrai
+trajet.
+
+C'est un outil de développement. Tester ce qui réagit à votre position — une
+application de navigation, une zone géographique, un enregistreur de parcours —
+oblige sinon à sortir.
+
+MISE EN PLACE
+
+Android n'accepte les positions simulées que depuis l'application choisie dans
+Réglages > Options pour les développeurs > « Sélectionner l'application de
+position fictive ». Choisissez GPS Mocker. L'application indique si elle a été
+choisie et propose un raccourci vers cet écran. Sans root, et sans toucher aux
+autres applications.
+
+CE QU'ELLE FAIT
+
+* Rejoue un itinéraire avec un modèle de vitesse qui ralentit dans les virages,
+  suit la vitesse enregistrée d'un GPX quand il porte des horodatages, et sait
+  boucler.
+* Importe du GPX et du GeoJSON. Un export GeoJSON d'une application de navigation
+  apporte ses instructions virage par virage ; un GPX peut être recalé sur les
+  routes pour en obtenir.
+* Crée un itinéraire à partir de points de passage via un serveur Valhalla, avec
+  tout le jeu d'options de coût — autoroutes, péages, ferries, vitesse maximale.
+* Conduite manuelle au pavé tactile, avec retour automatique sur la ligne quand
+  on s'en écarte.
+* Enregistre les itinéraires dans une bibliothèque locale, et les réexporte en
+  GPX.
+* Carte avec relief, ombrage et 3D. Thème clair et sombre suivant le système.
+  Français et anglais.
+
+La lecture tourne dans un service de premier plan : un itinéraire continue après
+avoir quitté l'application. Vous décidez quand la notification apparaît : pendant
+la lecture, toute la session, ou jamais.
+
+L'APPLICATION DE BUREAU
+
+Le même projet produit une application de bureau pour macOS, Linux et Windows
+qui pilote un appareil *branché* : par adb pour un téléphone ou un émulateur
+Android, par le simulateur ou un service lockdown pour iOS. Elle installe et
+configure cette application pour vous, et l'appareil testé n'affiche rien.
+
+Logiciel libre, sous licence MIT. Sources, versions et tickets :
+https://github.com/Akylas/gps-mocker-rs
+
+RÉSEAU
+
+Le calcul d'itinéraire, le recalage, la recherche de lieux et le fond de carte
+viennent de services en ligne — une instance Valhalla et un style MapTiler par
+défaut. Les deux se configurent dans les réglages, pour pointer vers les vôtres.
+Rien d'autre ne quitte l'appareil : ni compte, ni statistiques, ni pistage.

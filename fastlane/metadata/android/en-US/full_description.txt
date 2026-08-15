@@ -1,0 +1,47 @@
+GPS Mocker feeds a fake position to your device — a single point you drop on the
+map, or a whole route replayed at a speed that behaves like a real drive.
+
+It is a developer tool. Testing anything that reacts to where you are — a
+navigation app, a geofence, a ride tracker — otherwise means going outside.
+
+SETTING IT UP
+
+Android does not let an app mock a location until you say so. Open Settings →
+Developer options → "Select mock location app" and pick GPS Mocker. The app says
+whether it has been selected, and offers a shortcut straight to that screen.
+No root, and no other app is touched.
+
+WHAT IT DOES
+
+* Replays a route with a speed model that eases into corners, follows the speed
+  a GPX was recorded at when it carries timestamps, and can loop.
+* Imports GPX and GeoJSON. A GeoJSON export from a routing app brings its
+  turn-by-turn instructions along; a GPX can be map-matched to get some.
+* Builds a route from waypoints through a Valhalla routing server, with the full
+  set of costing options — highways, tolls, ferries, top speed, and the rest.
+* Drives manually with an on-screen pad, and routes you back to the line when
+  you wander off it.
+* Saves routes to a local library, and exports them again as GPX.
+* Map with terrain, hillshade and 3D. Light and dark, following the system.
+  English and French.
+
+Playback runs from a foreground service, so a route keeps going after you leave
+the app. When that notification appears is up to you: while a route is playing,
+for the whole session, or never.
+
+THE DESKTOP APP
+
+The same project builds a desktop app for macOS, Linux and Windows that drives
+an *attached* device instead — over adb for an Android phone or emulator, and
+over the Simulator or a lockdown service for iOS. It installs and configures
+this app for you, so the phone under test shows nothing on screen at all.
+
+Free software, MIT licensed. Source, releases and issues:
+https://github.com/Akylas/gps-mocker-rs
+
+NETWORK
+
+Route building, map matching, place search and the basemap are fetched from
+online services — a Valhalla instance and a MapTiler style by default. Both are
+configurable in Settings, so you can point the app at your own. Nothing else
+leaves the device: there is no account, no analytics and no tracking.

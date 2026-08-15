@@ -1,0 +1,11 @@
+Features
+
+- **adb:** one Prepare device action that fixes what is actually missing
+- **adb:** send bearing and speed with the mocked fix
+- allow custom map style
+- **android:** drive our own app over adb instead of the appium helper
+- **android:** mock location natively, with no adb bridge
+- **android:** stop showing a notification for mocking nobody is watching
+- **ci:** let a manual release choose how far to bump the
+…
+Full changelog: https://github.com/Akylas/gps-mocker-rs/releases/tag/v2.2.0

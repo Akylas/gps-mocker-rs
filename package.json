@@ -30,7 +30,9 @@
         "check": "cargo check --manifest-path src-tauri/Cargo.toml && eslint src *.js && svelte-check",
         "release": "standard-version --commit-all",
         "android:dev": "tauri android dev",
-        "android:build": "tauri android build"
+        "android:build": "tauri android build",
+        "screenshots": "node tools/screenshots.mjs",
+        "fdroid:changelog": "node tools/fdroid-changelog.mjs"
     },
     "devDependencies": {
         "@commitlint/cli": "^17.1.2",

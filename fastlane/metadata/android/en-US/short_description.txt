@@ -1,0 +1,1 @@
+Mock your location: a single point, or a whole route replayed at a real speed.

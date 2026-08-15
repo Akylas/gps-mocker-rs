@@ -1,0 +1,115 @@
+<!doctype html>
+<!--
+    The 1024×500 banner every Android store listing asks for.
+
+    It is a page rather than an image so that changing the wording is an edit
+    rather than a round trip through a design tool. `node tools/screenshots.mjs
+    feature-graphic` renders it into fastlane/metadata/android/*/images/.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>GPS Mocker — feature graphic</title>
+        <style>
+            :root {
+                --ink: #1b1408;
+                --muted: #6b4a24;
+            }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                width: 1024px;
+                height: 500px;
+                overflow: hidden;
+            }
+            body {
+                position: relative;
+                display: flex;
+                align-items: center;
+                gap: 56px;
+                padding: 0 72px;
+                background: linear-gradient(135deg, #f9a94f 0%, #f0803f 55%, #e2672f 100%);
+                font-family: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                color: var(--ink);
+            }
+
+            /* a route, abstracted: the thing the app actually draws */
+            .route {
+                position: absolute;
+                inset: 0;
+                opacity: 0.28;
+            }
+
+            .icon {
+                width: 196px;
+                height: 196px;
+                flex: 0 0 auto;
+                filter: drop-shadow(0 18px 32px rgba(80, 34, 0, 0.35));
+            }
+
+            .words {
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+            }
+            h1 {
+                font-size: 66px;
+                line-height: 1;
+                font-weight: 800;
+                letter-spacing: -0.025em;
+                color: #fff;
+                text-shadow: 0 3px 14px rgba(90, 40, 0, 0.3);
+            }
+            p {
+                font-size: 27px;
+                line-height: 1.35;
+                font-weight: 500;
+                max-width: 20ch;
+                color: #4a2c0c;
+            }
+            ul {
+                display: flex;
+                gap: 10px;
+                list-style: none;
+                margin-top: 8px;
+            }
+            li {
+                padding: 8px 16px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.82);
+                font-size: 19px;
+                font-weight: 600;
+                color: #7a3d0d;
+            }
+        </style>
+    </head>
+    <body>
+        <svg class="route" viewBox="0 0 1024 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+                d="M-40 402 C 150 402, 190 250, 330 250 S 520 96, 660 96 S 880 220, 1080 168"
+                stroke="#ffffff"
+                stroke-width="16"
+                stroke-linecap="round"
+            />
+            <circle cx="330" cy="250" r="15" fill="#fff" />
+            <circle cx="660" cy="96" r="15" fill="#fff" />
+        </svg>
+
+        <img class="icon" src="../src-tauri/icons/icon.png" alt="" />
+
+        <div class="words">
+            <h1>GPS&nbsp;Mocker</h1>
+            <p>Replay a whole route to your phone, emulator or simulator.</p>
+            <ul>
+                <li>GPX &amp; GeoJSON</li>
+                <li>Turn-by-turn</li>
+                <li>No root</li>
+            </ul>
+        </div>
+    </body>
+</html>
