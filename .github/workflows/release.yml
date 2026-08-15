@@ -77,10 +77,14 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # --commit-all: the postchangelog hook in .versionrc.js writes the
+          # F-Droid changelog for the new versionCode, and standard-version only
+          # stages the files it bumped itself. The checkout is clean, so there is
+          # nothing else for it to pick up.
           if [ "$BUMP" = auto ]; then
-            pnpm exec standard-version
+            pnpm exec standard-version --commit-all
           else
-            pnpm exec standard-version --release-as "$BUMP"
+            pnpm exec standard-version --commit-all --release-as "$BUMP"
           fi
           git push --follow-tags origin "HEAD:$GITHUB_REF_NAME"
 

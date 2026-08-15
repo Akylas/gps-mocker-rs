@@ -1,13 +1,28 @@
+<div align="center">
+
+<img src="src-tauri/icons/icon.png" width="112" height="112" alt="" />
+
 # GPS Mocker
 
-Feed a fake GPS position to a phone, an emulator or a simulator — either a single
-point, or a whole route replayed at a believable speed.
+**Feed a fake GPS position to a phone, an emulator or a simulator — either a single point, or a whole route replayed at a believable speed.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-e8722f)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/Akylas/gps-mocker-rs?color=e8722f)](https://github.com/Akylas/gps-mocker-rs/releases/latest)
+[![Release workflow](https://img.shields.io/github/actions/workflow/status/Akylas/gps-mocker-rs/release.yml?label=release)](https://github.com/Akylas/gps-mocker-rs/actions/workflows/release.yml)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20%C2%B7%20Android-555)](#install)
+[![Built with Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://v2.tauri.app/)
+
+[**Website**](https://akylas.github.io/gps-mocker-rs/) · [Download](https://github.com/Akylas/gps-mocker-rs/releases/latest) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/Akylas/gps-mocker-rs/issues)
+
+<img src="docs/screenshots/desktop-playback.webp" alt="The desktop app replaying an 8.6 km route across Grenoble, with live speed, heading, distance travelled, ETA and the next turn instruction." />
+
+</div>
+
+---
 
 It runs as a desktop app that drives an attached device over `adb`, and as an
 Android app that mocks its own location with nothing attached at all. Both are
 the same project, built for two targets.
-
----
 
 ## What it does
 
@@ -35,6 +50,61 @@ the same project, built for two targets.
 
 The Android path sends latitude, longitude, altitude, bearing and speed. The iOS
 Simulator's notification carries a coordinate and nothing else.
+
+---
+
+## Screenshots
+
+Every image here is captured from the running app by
+[`tools/screenshots.mjs`](tools/screenshots.mjs), so it cannot drift from what
+the app actually looks like. There are more on the
+[website](https://akylas.github.io/gps-mocker-rs/#screens).
+
+<table>
+    <tr>
+        <td width="50%">
+            <img src="docs/screenshots/desktop-route-builder.webp" alt="Route builder mode with waypoints on the map and a panel of Valhalla costing options." /><br />
+            <b>Build a route by clicking</b> — drop waypoints, tune the costing model, watch the length and manoeuvre count update as you go.
+        </td>
+        <td width="50%">
+            <img src="docs/screenshots/desktop-terrain.webp" alt="A pitched 3D view of the Grenoble valley with hillshaded mountains behind it." /><br />
+            <b>Terrain and 3D</b> — a DEM behind the basemap, with hillshade and adjustable exaggeration.
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <img src="docs/screenshots/desktop-dark.webp" alt="The same route replaying with the dark theme and a dark basemap." /><br />
+            <b>Dark, all the way down</b> — the basemap switches with the shell, because dark chrome over a bright map does not read as a dark theme.
+        </td>
+        <td>
+            <img src="docs/screenshots/desktop-settings.webp" alt="The settings panel open over a route." /><br />
+            <b>Settings that are actually settings</b> — which devices to send to, how hard to slow into a turn, how far ahead to start, where your own Valhalla is.
+        </td>
+    </tr>
+</table>
+
+<div align="center">
+<img src="docs/screenshots/phone-playback.webp" width="250" alt="The compact phone layout, light theme, with the bottom sheet open on the route detail and live stats." />
+<img src="docs/screenshots/phone-dark.webp" width="250" alt="The same compact layout in the dark theme." />
+</div>
+
+---
+
+## Install
+
+Everything is published on [GitHub Releases](https://github.com/Akylas/gps-mocker-rs/releases/latest):
+desktop bundles for the three platforms, plus one universal Android APK named
+`gps-mocker-android.apk`.
+
+| what                       | where                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------- |
+| macOS, Linux, Windows      | [latest release](https://github.com/Akylas/gps-mocker-rs/releases/latest)                |
+| Android APK                | [latest release](https://github.com/Akylas/gps-mocker-rs/releases/latest) — or let the desktop app install it for you |
+| F-Droid / IzzyOnDroid      | in preparation — see [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md)                        |
+| source                     | [Building from source](#building-from-source)                                            |
+
+The macOS build is the one that can also talk to iOS Simulators and attached iOS
+devices; the iOS code paths only compile there.
 
 ---
 
@@ -82,6 +152,12 @@ endpoint** at your own if you are doing anything heavy with it.
 The basemap uses a MapTiler style with a key baked into the defaults. Replace
 both style URLs under **Settings → Map** to use your own.
 
+### Privacy
+
+No account, no analytics, no tracking. Routing, map matching, place search and
+the basemap are fetched from online services — both endpoints are configurable,
+as above. Saved routes stay on the machine.
+
 ---
 
 ## Building from source
@@ -103,16 +179,18 @@ npm run build    # bundle for the current platform
 
 Any of npm, yarn or pnpm works. CI uses pnpm.
 
-| script                  | what it does                               |
-| ----------------------- | ------------------------------------------ |
-| `npm run dev`           | desktop app in dev mode                    |
-| `npm run dev:web`       | just the frontend, in a browser on `:3011` |
-| `npm run build`         | packaged desktop build                     |
-| `npm run android:dev`   | Android build on a device, hot reloading   |
-| `npm run android:build` | Android release build                      |
-| `npm run test`          | Rust tests                                 |
-| `npm run check`         | `cargo check`, ESLint and `svelte-check`   |
-| `npm run format`        | Prettier and ESLint `--fix`                |
+| script                    | what it does                                                |
+| ------------------------- | ----------------------------------------------------------- |
+| `npm run dev`             | desktop app in dev mode                                     |
+| `npm run dev:web`         | just the frontend, in a browser on `:3011`                  |
+| `npm run build`           | packaged desktop build                                      |
+| `npm run android:dev`     | Android build on a device, hot reloading                    |
+| `npm run android:build`   | Android release build                                       |
+| `npm run test`            | Rust tests                                                  |
+| `npm run check`           | `cargo check`, ESLint and `svelte-check`                    |
+| `npm run format`          | Prettier and ESLint `--fix`                                 |
+| `npm run screenshots`     | regenerates the website, README and store images            |
+| `npm run fdroid:changelog` | writes the F-Droid changelog for the current version        |
 
 ### Building the Android APK
 
@@ -240,7 +318,13 @@ src-tauri/                  Rust
   plugins/tauri-plugin-mock-location/
                             the Android side: Kotlin service, provider, receiver
   gen/android/              the committed Android project
+docs/                       the website, served by GitHub Pages from this folder
+  screenshots/              generated; do not hand-edit
+fastlane/metadata/android/  the F-Droid and IzzyOnDroid store listing
+fdroid/                     the build recipe to submit to fdroiddata
 tools/android-icons.py      regenerates the Android launcher icons
+tools/screenshots.mjs       regenerates every screenshot on the site and here
+tools/fdroid-changelog.mjs  writes the store changelog for the current version
 ```
 
 ---
@@ -251,7 +335,9 @@ Tagging `v#.#.#` runs [`.github/workflows/release.yml`](.github/workflows/releas
 which creates a draft release from the `CHANGELOG.md` entry, builds the desktop
 bundles for macOS, Linux and Windows, attaches the Android APK as
 `gps-mocker-android.apk`, and then publishes it. `npm run release` bumps the
-version and writes the changelog through `standard-version`.
+version and writes the changelog through `standard-version`. The same run writes
+the F-Droid changelog entry for the new `versionCode` — see
+[.versionrc.js](.versionrc.js).
 
 The Android job is skipped unless the repository has these secrets, because an
 APK signed with a throwaway key is worse than none:
@@ -264,7 +350,35 @@ APK signed with a throwaway key is worse than none:
 | `ANDROID_KEY_PASSWORD`      | key password, if it differs from the store's |
 
 That asset name is not cosmetic: the desktop app looks it up by name to install
-the helper onto a device.
+the helper onto a device — and IzzyOnDroid will look it up by name too.
+
+### The website
+
+[`docs/`](docs/) is the site at <https://akylas.github.io/gps-mocker-rs/>. It is
+hand-written HTML with no build step, published by
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) whenever something
+under `docs/` changes. Preview it with any static server:
+
+```bash
+python3 -m http.server 4173 --directory docs
+```
+
+### Screenshots
+
+`npm run screenshots` regenerates every image on the site, in this README, and in
+the store listing. It drives the real app in a headless Chromium: plots
+waypoints by clicking the map, waits for Valhalla, starts playback, and captures
+the result. It needs `npm run dev:web` running, a Chromium or Chrome on the
+machine, and network. See
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md#screenshots).
+
+### F-Droid and IzzyOnDroid
+
+The store listing lives in [`fastlane/metadata/android/`](fastlane/metadata/android/)
+and the build recipe in [`fdroid/`](fdroid/).
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) has the whole picture: what is
+already automated, what a human still has to file, and why the two builds cannot
+update over one another.
 
 ---
 
@@ -294,6 +408,9 @@ cargo clean -p openssl-sys -p rusty_libimobiledevice --release --manifest-path s
 
 ## Contributing
 
+Issues and pull requests are welcome — bug reports, translations, and anything
+that makes a mocked drive more convincing especially so.
+
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/) —
 `commitlint` enforces it and the changelog is generated from them. Run
 `npm run format` and `npm run check` before opening a pull request.
@@ -302,4 +419,5 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/) —
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+contributors.

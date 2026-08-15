@@ -1,0 +1,72 @@
+# F-Droid metadata for GPS Mocker.
+#
+# This file is not read from here. It is the copy kept next to the source so
+# that it can be reviewed and edited with the code; submitting to the main
+# F-Droid repository means opening a merge request against
+#
+#     https://gitlab.com/fdroid/fdroiddata
+#
+# with this file placed at metadata/com.akylas.gpsmocker.yml. Everything the
+# listing itself needs — title, descriptions, screenshots, per-release
+# changelogs — is read out of the fastlane/ tree in this repository, not from
+# here, so it stays in one place.
+#
+# IzzyOnDroid does not use this file at all: it takes the signed APK straight
+# off the GitHub release and reads the same fastlane/ tree. See
+# docs/DISTRIBUTION.md for which one to do first.
+
+Categories:
+  - Development
+License: MIT
+AuthorName: Akylas
+AuthorEmail: dev@akylas.fr
+WebSite: https://akylas.github.io/gps-mocker-rs/
+SourceCode: https://github.com/Akylas/gps-mocker-rs
+IssueTracker: https://github.com/Akylas/gps-mocker-rs/issues
+Changelog: https://github.com/Akylas/gps-mocker-rs/blob/master/CHANGELOG.md
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: |-
+      Route building, map matching, place search and the basemap are fetched
+      from online services — a Valhalla routing instance and a MapTiler style by
+      default. Both endpoints are configurable in Settings, so the app can be
+      pointed at a self-hosted Valhalla and any MapLibre style. Nothing else
+      leaves the device.
+
+RepoType: git
+Repo: https://github.com/Akylas/gps-mocker-rs.git
+
+# The recipe below is a starting point, not a build that has been through
+# fdroid's own builder. Expect to iterate on it with `fdroid build
+# com.akylas.gpsmocker` in the buildserver VM before opening the merge request —
+# a Rust + NDK + npm build is one of the harder shapes to get through, and the
+# toolchain versions available there move.
+Builds:
+  - versionName: 2.2.0
+    versionCode: 2002000
+    commit: v2.2.0
+    sudo:
+      - apt-get update
+      - apt-get install -y openjdk-17-jdk-headless
+      - update-alternatives --auto java
+    # Tauri drives the Android build itself. Gradle alone would produce an APK
+    # with no jniLibs in it, because the Rust core is a shared library the CLI
+    # cross-compiles first — so gradle is invoked by the build script, not by
+    # fdroid.
+    gradle:
+      - 'no'
+    ndk: 27.3.13750724
+    build: |-
+      export NDK_HOME="$ANDROID_NDK"
+      rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+      npm install --no-audit --no-fund
+      npx --no-install tauri android build --apk
+    # unsigned: fdroid signs it with its own key, which is why an F-Droid build
+    # cannot be updated over a release-signed one and vice versa
+    output: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+CurrentVersion: 2.2.0
+CurrentVersionCode: 2002000
