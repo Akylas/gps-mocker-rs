@@ -2,8 +2,6 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [2.2.2](https://github.com/Akylas/gps-mocker-rs/compare/v2.2.1...v2.2.2) (2026-08-15)
-
 ## [2.1.0](https://github.com/farfromrefug/gps-mocker-rs/compare/v1.2.0...v2.1.0) (2022-10-06)
 
 
