@@ -158,10 +158,10 @@ const INCLUDE_STOPPED = '0x00000020';
  */
 const RESULT_OK = 1;
 const RESULT_NOT_MOCK_APP = 2;
-const RESULT_SERVICE_REFUSED = 3;
+const RESULT_REFUSED = 3;
 
 /** What a device still needs before it can be mocked. */
-export type Readiness = { ready: true } | { ready: false; reason: 'not-installed' | 'not-mock-app' | 'service-refused' | 'unreachable'; detail: string };
+export type Readiness = { ready: true } | { ready: false; reason: 'not-installed' | 'not-mock-app' | 'refused' | 'unreachable'; detail: string };
 
 /**
  * Asks the device where it stands, in one broadcast.
@@ -179,8 +179,8 @@ export async function checkReadiness(serial: string): Promise<Readiness> {
     if (code === RESULT_NOT_MOCK_APP) {
         return { ready: false, reason: 'not-mock-app', detail: 'the app is installed but not selected as the mock location app' };
     }
-    if (code === RESULT_SERVICE_REFUSED) {
-        return { ready: false, reason: 'service-refused', detail: 'the app is not allowed to run its location service in the background' };
+    if (code === RESULT_REFUSED) {
+        return { ready: false, reason: 'refused', detail: 'the app could not claim the test location providers' };
     }
 
     const installed = await isInstalled(serial);
@@ -206,21 +206,21 @@ function broadcast(serial: string, action: string, extras: string[] = []) {
 
 /**
  * Everything the app needs to mock, applied over adb with nothing shown on the
- * device.
+ * device — not even a notification: a fix sent from here is published by the
+ * receiver that takes the broadcast, so no foreground service is ever started.
  *
- * The location permission is a runtime one and a foreground service of type
- * `location` may not start without it; mock_location is an app op with no
- * runtime prompt at all; and the battery exemption is what lets a broadcast
- * start that service while the app is in the background.
+ * The location permission is a runtime one, mock_location is an app op with no
+ * runtime prompt at all, and the background grants are what keep the receiver
+ * reachable once the OEM's battery manager has had its way with the app.
  */
 export function setupCommands(serial: string): { labelKey: string; command: string }[] {
     const adb = `adb -s ${serial}`;
     return [
         { labelKey: 'task_grant_location', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.ACCESS_FINE_LOCATION` },
         { labelKey: 'task_grant_coarse_location', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.ACCESS_COARSE_LOCATION` },
-        // without this the location-type foreground service cannot start while
-        // the app is in the background, which is the only state it is ever in
-        // when a desktop is driving it
+        // the app is in the background for the whole of a desktop-driven
+        // session, and it is also what the on-device foreground service needs
+        // before it may start
         { labelKey: 'task_grant_background_location', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.ACCESS_BACKGROUND_LOCATION` },
         { labelKey: 'task_grant_notifications', command: `${adb} shell pm grant ${HELPER_PACKAGE} android.permission.POST_NOTIFICATIONS` },
         { labelKey: 'task_allow_mock_location', command: `${adb} shell appops set ${HELPER_PACKAGE} android:mock_location allow` },

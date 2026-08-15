@@ -1,9 +1,12 @@
 //! Drives Android's `LocationManager` test providers so the app itself is the
 //! mock location source — no adb, no helper APK, no desktop attached.
 //!
-//! Everything runs in a foreground service: the whole point is to keep feeding
-//! locations while some *other* app is in front, and a backgrounded webview
-//! gets throttled to a stop.
+//! A session is the registration itself, which lives in the system and outlives
+//! the process that made it. A foreground service is only added on top of that
+//! when a route is being replayed on the device: a backgrounded webview gets
+//! its timers throttled to a stop, and that clock has to keep running. Nothing
+//! else earns a notification — a desktop driving the device over adb brings its
+//! own clock and never starts one.
 
 use tauri::{
   plugin::{Builder, TauriPlugin},
@@ -48,6 +51,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
       commands::push_location,
       commands::set_route,
       commands::set_playback,
+      commands::set_notification_mode,
       commands::set_system_bars
     ])
     .setup(|app, api| {

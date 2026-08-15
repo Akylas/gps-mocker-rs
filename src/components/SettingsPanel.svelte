@@ -71,6 +71,19 @@
     {#if isSelfMocking}
         <!-- the app is the provider here; there is no other device to talk to -->
         <MockProviderPanel onError={onMockError} />
+        <!-- the notification is what pays for the foreground service, and the
+             service is only ever needed to keep playing once the app is no
+             longer in front — which is why turning it off costs that -->
+        <SegmentedControl
+            bind:value={$store.androidNotification}
+            label={$_('android_notification')}
+            options={[
+                { value: 'playing', label: $_('android_notification_playing') },
+                { value: 'always', label: $_('android_notification_always') },
+                { value: 'never', label: $_('android_notification_never') }
+            ]}
+        />
+        <p class="hint">{$_(`android_notification_${$store.androidNotification}_help`)}</p>
     {:else}
         <Toggle label={$_('mock_enabled')} bind:checked={$store.mockEnabled} />
         <Checkbox label={$_('android_emulators')} bind:checked={$store.androidEmulators} />

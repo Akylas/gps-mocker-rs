@@ -12,6 +12,7 @@ screen, and drive Android's test location providers.
 - `allow-push-location`
 - `allow-set-route`
 - `allow-set-playback`
+- `allow-set-notification-mode`
 - `allow-set-system-bars`
 - `allow-registerListener`
 
@@ -124,6 +125,32 @@ Enables the registerListener command without any pre-configured scope.
 <td>
 
 Denies the registerListener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mock-location:allow-set-notification-mode`
+
+</td>
+<td>
+
+Enables the set_notification_mode command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mock-location:deny-set-notification-mode`
+
+</td>
+<td>
+
+Denies the set_notification_mode command without any pre-configured scope.
 
 </td>
 </tr>

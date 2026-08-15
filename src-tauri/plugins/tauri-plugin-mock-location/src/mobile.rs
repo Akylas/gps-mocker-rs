@@ -65,6 +65,14 @@ impl<R: Runtime> MockLocation<R> {
       .map_err(Into::into)
   }
 
+  pub fn set_notification_mode(&self, payload: NotificationRequest) -> Result<()> {
+    self
+      .0
+      .run_mobile_plugin::<Empty>("setNotificationMode", payload)
+      .map(|_| ())
+      .map_err(Into::into)
+  }
+
   pub fn set_system_bars(&self, payload: SystemBarsRequest) -> Result<()> {
     self
       .0

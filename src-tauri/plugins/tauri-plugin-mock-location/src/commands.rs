@@ -49,6 +49,14 @@ pub(crate) async fn set_playback<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn set_notification_mode<R: Runtime>(
+  app: AppHandle<R>,
+  payload: NotificationRequest,
+) -> Result<()> {
+  app.mock_location().set_notification_mode(payload)
+}
+
+#[command]
 pub(crate) async fn set_system_bars<R: Runtime>(
   app: AppHandle<R>,
   payload: SystemBarsRequest,

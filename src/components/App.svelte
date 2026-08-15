@@ -43,7 +43,7 @@
     import UserLocationControl from './UserLocationControl';
     import { compact, type Detent } from '../lib/layout';
     import { host, isDesktop, isSelfMocking } from '../lib/platform';
-    import { mockStatus, onProgress, onStopped, refreshStatus, stopMocking } from '../lib/mockProvider';
+    import { mockStatus, onProgress, onStopped, refreshStatus, setNotificationMode, stopMocking, type NotificationMode } from '../lib/mockProvider';
     import { alongAtPosition, clearTrack, isDriving, pushFix, syncPlayback, syncRoute } from '../lib/nativePlayback';
     import DrivePad from './DrivePad.svelte';
     import Reticle from './Reticle.svelte';
@@ -107,6 +107,8 @@
         terrain3d: false,
         hillshade: false,
         mockEnabled: false,
+        /** Android only: when the app may show its own notification. */
+        androidNotification: 'playing' as NotificationMode,
         // playback
         playbackSpeed: 50,
         speedMultiplier: 1,
@@ -401,6 +403,9 @@
     $: profileKey = `${$store.playbackSpeed}|${$store.useRecordedSpeed}|${$store.smartSlowdown}|${$store.minSlowdownFactor}|${$store.maneuverLookahead}`;
     $: if (isSelfMocking) rebakeTrack(activeRoute, profileKey);
     $: if (isSelfMocking) syncPlayback({ speedMultiplier: $store.speedMultiplier, loop: $store.loopPlayback });
+    // the service is started and stopped to match this, so it is applied on
+    // every launch and not only when someone changes it
+    $: if (isSelfMocking) setNotificationMode($store.androidNotification).catch((error) => console.warn('cannot set the notification mode', error));
 
     const rebakeTrack = debounce((route: Route | undefined) => syncRoute(route, playerOptions), 250);
 

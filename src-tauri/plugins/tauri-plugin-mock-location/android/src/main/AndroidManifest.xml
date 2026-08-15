@@ -15,11 +15,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Location is a foreground-only permission, so a `location` foreground
-         service cannot be started while the app is in the background — which is
-         exactly what a desktop driving us over adb does. This lifts that. It is
-         never prompted for: the desktop's setup grants it with `pm grant`, and
-         the on-device flow does not need it because there the service starts
-         from the app's own screen. -->
+         service cannot be started while the app is in the background. The usual
+         path does not need this — on-device playback starts the service from
+         the app's own screen, and a desktop driving us over adb starts no
+         service at all — but the notification's own Play button can, so the
+         desktop's setup grants it with `pm grant` and it is never prompted
+         for. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

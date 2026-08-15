@@ -46,6 +46,11 @@ impl<R: Runtime> MockLocation<R> {
     Err(Error::Unsupported)
   }
 
+  pub fn set_notification_mode(&self, _payload: NotificationRequest) -> Result<()> {
+    // nothing off Android has a service notification to hide
+    Ok(())
+  }
+
   pub fn set_system_bars(&self, _payload: SystemBarsRequest) -> Result<()> {
     // desktop window chrome is the platform's business, not ours
     Ok(())
