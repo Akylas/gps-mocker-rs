@@ -4,8 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
@@ -57,6 +55,12 @@ class PushLocationArgs {
     var accuracy: Double? = null
 }
 
+@InvokeArg
+class NotificationArgs {
+    /** `always`, `playing` or `never`; see NotificationMode. */
+    var mode: String = "playing"
+}
+
 private const val ALIAS_LOCATION = "location"
 private const val ALIAS_NOTIFICATIONS = "notifications"
 
@@ -74,29 +78,17 @@ private const val ALIAS_NOTIFICATIONS = "notifications"
 )
 class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
 
-    private val main = Handler(Looper.getMainLooper())
-
-    /**
-     * Only ever used to answer "is this app the selected mock app". Registering
-     * providers is the service's job — doing it from here would tie the test
-     * providers to the webview's lifetime, which is exactly what we are trying
-     * to avoid.
-     */
-    private val probe by lazy { MockProvider(activity.applicationContext) }
-
     override fun load(webView: android.webkit.WebView) {
         super.load(webView)
 
-        // A force-stop or a crash kills the process without running the
-        // service's onDestroy, and the platform keeps serving the last mocked
-        // fix from the still-registered test providers. With no service alive
-        // any registration is stale by definition, so drop it: otherwise the
-        // device stays stuck on a mocked position until the user notices.
-        if (MockLocationService.instance == null) {
-            probe.release()
-        }
+        MockEngine.attach(activity.applicationContext)
+        // takes back a session we remember — which may be a desktop's, running
+        // with no service and no notification — and drops a registration left
+        // behind by a force-stop or a crash, so the device is never stuck on a
+        // mocked position with nobody driving it
+        MockEngine.adopt()
 
-        MockLocationService.progressListener = { positionMs, ended, fix ->
+        MockEngine.progressListener = { positionMs, ended, fix ->
             val payload = JSObject()
                 .put("positionMs", positionMs)
                 .put("ended", ended)
@@ -108,7 +100,7 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
             }
             trigger("progress", payload)
         }
-        MockLocationService.statusListener = {
+        MockEngine.statusListener = {
             trigger("stopped", JSObject())
         }
     }
@@ -179,67 +171,59 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun beginMocking(invoke: Invoke) {
-        // the notification is how the user stops a run from outside the app, but
-        // a denied prompt must not block mocking
+        // the notification is how a run is stopped from outside the app, but a
+        // denied prompt must not block mocking — and there is nothing to ask
+        // for when the user has already said they do not want one
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            MockEngine.notificationMode != NotificationMode.NEVER &&
             getPermissionState(ALIAS_NOTIFICATIONS) != PermissionState.GRANTED
         ) {
             requestPermissionForAlias(ALIAS_NOTIFICATIONS, invoke, "notificationPermissionResult")
             return
         }
-        launchService(invoke)
+        startSession(invoke)
     }
 
     @PermissionCallback
     fun notificationPermissionResult(invoke: Invoke) {
-        launchService(invoke)
+        startSession(invoke)
     }
 
-    private fun launchService(invoke: Invoke) {
-        if (!probe.isSelectedAsMockApp()) {
+    private fun startSession(invoke: Invoke) {
+        if (!MockEngine.start()) {
             invoke.reject(ERR_NOT_SELECTED)
             return
         }
-        MockLocationService.start(activity.applicationContext)
-        // onCreate only runs once this command returns to the looper
-        awaitService(invoke, attemptsLeft = 20)
-    }
-
-    private fun awaitService(invoke: Invoke, attemptsLeft: Int) {
-        val service = MockLocationService.instance
-        if (service != null && service.isMocking) {
-            invoke.resolve(status())
-            return
-        }
-        if (service != null && !service.acquire()) {
-            invoke.reject(ERR_NOT_SELECTED)
-            return
-        }
-        if (attemptsLeft <= 0) {
-            invoke.reject("the mock location service did not start")
-            return
-        }
-        main.postDelayed({ awaitService(invoke, attemptsLeft - 1) }, 50)
+        invoke.resolve(status())
     }
 
     @Command
     fun stopMocking(invoke: Invoke) {
-        MockLocationService.pendingTrack = null
-        MockLocationService.stop(activity.applicationContext)
-        invoke.resolve(JSObject().put("available", true)
-            .put("selectedAsMockApp", probe.isSelectedAsMockApp())
-            .put("mocking", false))
+        MockEngine.stop()
+        invoke.resolve(status())
+    }
+
+    /**
+     * How much of itself the app may put in the notification shade.
+     *
+     * Persisted natively: the service that reads it can be started before the
+     * webview has had a chance to say anything.
+     */
+    @Command
+    fun setNotificationMode(invoke: Invoke) {
+        val args = invoke.parseArgs(NotificationArgs::class.java)
+        MockEngine.notificationMode = NotificationMode.from(args.mode)
+        invoke.resolve(JSObject())
     }
 
     @Command
     fun pushLocation(invoke: Invoke) {
         val args = invoke.parseArgs(PushLocationArgs::class.java)
-        val service = MockLocationService.instance
-        if (service == null) {
+        if (!MockEngine.active) {
             invoke.reject(ERR_NOT_RUNNING)
             return
         }
-        service.pushOneShot(
+        MockEngine.pushOneShot(
             Fix(
                 lat = args.lat,
                 lon = args.lon,
@@ -261,44 +245,36 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
             },
             args.durationMs
         )
-        val service = MockLocationService.instance
-        if (service == null) {
-            // handed over before the service came up; onCreate picks it up
-            MockLocationService.pendingTrack = track
-        } else {
-            service.setTrack(track)
-        }
+        MockEngine.setTrack(track)
         invoke.resolve(JSObject())
     }
 
     @Command
     fun setPlayback(invoke: Invoke) {
         val args = invoke.parseArgs(SetPlaybackArgs::class.java)
-        val service = MockLocationService.instance
-        if (service == null) {
+        if (!MockEngine.active) {
             invoke.reject(ERR_NOT_RUNNING)
             return
         }
         // order matters: seek and speed both rewrite the playback anchor, so
         // they have to land before the clock is allowed to start
-        args.speedMultiplier?.let { service.setSpeedMultiplier(it) }
-        args.looping?.let { service.setLooping(it) }
-        args.positionMs?.let { service.seek(it) }
-        args.playing?.let { service.setPlaying(it) }
+        args.speedMultiplier?.let { MockEngine.setSpeedMultiplier(it) }
+        args.looping?.let { MockEngine.setLooping(it) }
+        args.positionMs?.let { MockEngine.seek(it) }
+        args.playing?.let { MockEngine.setPlaying(it) }
         invoke.resolve(JSObject())
     }
 
     private fun status(): JSObject {
-        val service = MockLocationService.instance
         return JSObject()
             .put("available", true)
-            .put("selectedAsMockApp", probe.isSelectedAsMockApp())
-            .put("mocking", service?.isMocking ?: false)
+            .put("selectedAsMockApp", MockEngine.isSelectedAsMockApp())
+            .put("mocking", MockEngine.active)
     }
 
     companion object {
         const val ERR_NOT_SELECTED =
             "this app is not selected under Developer options > Select mock location app"
-        const val ERR_NOT_RUNNING = "the mock location service is not running"
+        const val ERR_NOT_RUNNING = "no mock location session is running"
     }
 }

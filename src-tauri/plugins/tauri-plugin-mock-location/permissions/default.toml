@@ -13,6 +13,7 @@ permissions = [
   "allow-push-location",
   "allow-set-route",
   "allow-set-playback",
+  "allow-set-notification-mode",
   "allow-set-system-bars",
   # the generator does not kebab-case a camelCase command, so the identifier
   # keeps the name the mobile bridge actually invokes

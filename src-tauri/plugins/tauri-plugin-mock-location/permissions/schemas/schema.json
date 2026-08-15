@@ -343,6 +343,18 @@
           "markdownDescription": "Denies the registerListener command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_notification_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-notification-mode",
+          "markdownDescription": "Enables the set_notification_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_notification_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-notification-mode",
+          "markdownDescription": "Denies the set_notification_mode command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_playback command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-playback",
@@ -403,10 +415,10 @@
           "markdownDescription": "Denies the stop_mocking command without any pre-configured scope."
         },
         {
-          "description": "Allows the app to inspect mock-provider status, open the developer settings\nscreen, and drive Android's test location providers.\n\n#### This default permission set includes:\n\n- `allow-check-status`\n- `allow-open-developer-settings`\n- `allow-start-mocking`\n- `allow-stop-mocking`\n- `allow-push-location`\n- `allow-set-route`\n- `allow-set-playback`\n- `allow-set-system-bars`\n- `allow-registerListener`",
+          "description": "Allows the app to inspect mock-provider status, open the developer settings\nscreen, and drive Android's test location providers.\n\n#### This default permission set includes:\n\n- `allow-check-status`\n- `allow-open-developer-settings`\n- `allow-start-mocking`\n- `allow-stop-mocking`\n- `allow-push-location`\n- `allow-set-route`\n- `allow-set-playback`\n- `allow-set-notification-mode`\n- `allow-set-system-bars`\n- `allow-registerListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows the app to inspect mock-provider status, open the developer settings\nscreen, and drive Android's test location providers.\n\n#### This default permission set includes:\n\n- `allow-check-status`\n- `allow-open-developer-settings`\n- `allow-start-mocking`\n- `allow-stop-mocking`\n- `allow-push-location`\n- `allow-set-route`\n- `allow-set-playback`\n- `allow-set-system-bars`\n- `allow-registerListener`"
+          "markdownDescription": "Allows the app to inspect mock-provider status, open the developer settings\nscreen, and drive Android's test location providers.\n\n#### This default permission set includes:\n\n- `allow-check-status`\n- `allow-open-developer-settings`\n- `allow-start-mocking`\n- `allow-stop-mocking`\n- `allow-push-location`\n- `allow-set-route`\n- `allow-set-playback`\n- `allow-set-notification-mode`\n- `allow-set-system-bars`\n- `allow-registerListener`"
         }
       ]
     }

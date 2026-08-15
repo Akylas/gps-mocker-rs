@@ -61,6 +61,28 @@ pub struct PushLocationRequest {
   pub accuracy: Option<f64>,
 }
 
+/// When the Android build is allowed to show its foreground-service
+/// notification. The service only exists to keep the playback clock running
+/// while another app is in front, so it is the notification that decides
+/// whether there is a service at all.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NotificationMode {
+  /// for as long as the app holds the test providers
+  Always,
+  /// only while a route is being replayed on the device itself
+  #[default]
+  Playing,
+  /// never; playback then stops surviving the app going to the background
+  Never,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationRequest {
+  pub mode: NotificationMode,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
@@ -69,7 +91,7 @@ pub struct Status {
   /// true once the user has picked this app in Developer options →
   /// "Select mock location app"
   pub selected_as_mock_app: bool,
-  /// true while the foreground service holds the test providers
+  /// true while the app holds the test providers, with or without a service
   pub mocking: bool,
 }
 

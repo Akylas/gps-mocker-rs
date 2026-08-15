@@ -6,6 +6,7 @@ const COMMANDS: &[&str] = &[
   "push_location",
   "set_route",
   "set_playback",
+  "set_notification_mode",
   "set_system_bars",
   // the mobile bridge's own command, invoked by addPluginListener; without a
   // permission for it the plugin can never emit an event to the webview

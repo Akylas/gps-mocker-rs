@@ -64,7 +64,14 @@ With several devices attached, pick one under **Settings → Send to device**, o
 Install the Android build, then on the device: **Settings → Developer options →
 Select mock location app → GPS Mocker**. The app says so on screen and offers a
 shortcut to that screen. From there it publishes to the platform's test
-providers from a foreground service, so mocking survives leaving the app.
+providers, and a route being replayed runs from a foreground service so it keeps
+going after you leave the app.
+
+That service is the only thing that ever puts a notification in the shade, and
+**Settings → Notification** decides when: while a route is playing (the default),
+for the whole session, or never — never meaning playback no longer survives
+leaving the app. A device driven from a desktop over adb has nothing to keep
+alive between fixes, so it never starts the service and never shows anything.
 
 ### Routing
 

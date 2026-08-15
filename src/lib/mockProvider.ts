@@ -10,9 +10,19 @@ export interface MockStatus {
     available: boolean;
     /** the user has picked this app in Developer options → mock location app */
     selectedAsMockApp: boolean;
-    /** the foreground service currently holds the test providers */
+    /** the app currently holds the test providers, service or not */
     mocking: boolean;
 }
+
+/**
+ * When the Android build may show its foreground-service notification.
+ *
+ * That service only exists to keep the playback clock running while another app
+ * is in front, so this decides whether there is a service at all: `never` means
+ * playback stops surviving the app going to the background, and mocking driven
+ * from a desktop over adb never starts one either way.
+ */
+export type NotificationMode = 'always' | 'playing' | 'never';
 
 export interface MockProgress {
     /** milliseconds into the baked track */
@@ -57,10 +67,11 @@ export async function openDeveloperSettings() {
 }
 
 /**
- * Starts the foreground service and claims the test providers.
+ * Claims the test providers.
  *
  * Rejects when the app is not the selected mock app, or when the location
- * permission a location-type foreground service needs is refused.
+ * permission is refused. Whether a foreground service comes with it is the
+ * notification setting's business, not this one's.
  */
 export async function startMocking(): Promise<MockStatus> {
     const status = await call<MockStatus>('start_mocking');
@@ -86,6 +97,13 @@ export async function pushLocation(fix: { lat: number; lon: number; altitude?: n
 export async function setTrack(track: BakedTrack) {
     if (isSelfMocking) {
         await call('set_route', trackPayload(track));
+    }
+}
+
+/** Persisted natively: the service can outlive the webview that set it. */
+export async function setNotificationMode(mode: NotificationMode) {
+    if (isSelfMocking) {
+        await call('set_notification_mode', { mode });
     }
 }
 
