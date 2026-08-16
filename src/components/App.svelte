@@ -108,7 +108,7 @@
         hillshade: false,
         mockEnabled: false,
         /** Android only: when the app may show its own notification. */
-        androidNotification: 'playing' as NotificationMode,
+        androidNotification: 'always' as NotificationMode,
         // playback
         playbackSpeed: 50,
         speedMultiplier: 1,
@@ -1679,7 +1679,7 @@
             </svelte:fragment>
             <svelte:fragment slot="bottom">
                 {#if mockActive}
-                    <IconButton icon={LocationFilled} label={$_('mock_enabled')} active on:click={disableMocking} />
+                    <IconButton icon={LocationFilled} label={$_('stop_mocking')} active on:click={disableMocking} />
                 {/if}
                 <IconButton icon={Settings} label={$_('settings')} active={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)} />
             </svelte:fragment>
@@ -1738,6 +1738,16 @@
             <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
             <IconButton icon={Location} label={$_('drop_pin')} active={placeMode} on:click={() => (placeMode = !placeMode)} />
         </div>
+
+        <!-- held test providers are invisible everywhere else on the device, and
+             the notification carrying the same warning is a swipe away at best;
+             this is where the person holding the phone is already looking -->
+        {#if mockActive}
+            <div class="mock-banner" role="status">
+                <span>{$_('mock_banner')}</span>
+                <Button size="small" kind="secondary" on:click={disableMocking}>{$_('stop_mocking')}</Button>
+            </div>
+        {/if}
 
         {#if padOpen}
             <div class="pad-dock">
@@ -2042,6 +2052,33 @@
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow);
+    }
+
+    .mock-banner {
+        position: absolute;
+        top: calc(60px + var(--safe-top));
+        left: calc(8px + var(--safe-left));
+        /* clear of the map button column, which owns the right edge */
+        right: calc(66px + var(--safe-right));
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 6px 6px 10px;
+        font-size: 12px;
+        line-height: 1.35;
+        color: var(--warning-text);
+        /* --warning-soft is a tint meant to sit on a panel; this floats over the
+           map, so it needs an opaque surface underneath it to stay readable */
+        background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--surface);
+        border: 1px solid var(--warning);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+    }
+
+    .mock-banner span {
+        flex: 1;
+        min-width: 0;
     }
 
     .pad-dock {

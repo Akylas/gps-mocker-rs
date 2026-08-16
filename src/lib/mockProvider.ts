@@ -15,12 +15,16 @@ export interface MockStatus {
 }
 
 /**
- * When the Android build may show its foreground-service notification.
+ * When the Android build may put its ongoing notification in the shade.
  *
- * That service only exists to keep the playback clock running while another app
- * is in front, so this decides whether there is a service at all: `never` means
- * playback stops surviving the app going to the background, and mocking driven
- * from a desktop over adb never starts one either way.
+ * `always` — the default — is what tells the person holding the device that
+ * every app on it is reading a mocked position, including when a desktop is the
+ * one driving over adb. It also carries the only Stop button reachable from
+ * outside the app.
+ *
+ * `never` costs more than the notification: the playback clock lives in a
+ * foreground service, a foreground service must show one, so `never` means
+ * on-device playback stops surviving the app going to the background.
  */
 export type NotificationMode = 'always' | 'playing' | 'never';
 

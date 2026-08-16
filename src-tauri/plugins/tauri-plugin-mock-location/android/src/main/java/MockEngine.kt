@@ -7,10 +7,14 @@ import android.os.SystemClock
 
 /** How much of itself the app is allowed to put in the notification shade. */
 enum class NotificationMode {
-    /** For as long as the app holds the test providers. */
+    /**
+     * For as long as the app holds the test providers. The default, because
+     * held providers mean no app on the device can see the real GPS, and the
+     * shade is the only place that is ever said.
+     */
     ALWAYS,
 
-    /** Only while a route is actually being replayed. The default. */
+    /** Only while a route is actually being replayed. */
     PLAYING,
 
     /**
@@ -23,7 +27,7 @@ enum class NotificationMode {
 
     companion object {
         fun from(value: String?): NotificationMode =
-            values().firstOrNull { it.storageValue == value?.lowercase() } ?: PLAYING
+            values().firstOrNull { it.storageValue == value?.lowercase() } ?: ALWAYS
     }
 }
 
@@ -70,7 +74,7 @@ object MockEngine {
 
     private var notifiedAt = 0L
 
-    private var mode = NotificationMode.PLAYING
+    private var mode = NotificationMode.ALWAYS
 
     var playing = false
         private set
@@ -86,10 +90,6 @@ object MockEngine {
     /** Fired when a session ends, so the UI can drop its mocking flag. */
     @Volatile
     var statusListener: (() -> Unit)? = null
-
-    /** Fired when anything the notification shows has changed. */
-    @Volatile
-    var notificationListener: (() -> Unit)? = null
 
     private val tick = object : Runnable {
         override fun run() {
@@ -125,31 +125,34 @@ object MockEngine {
             if (value == mode) return
             mode = value
             prefs()?.edit()?.putString(KEY_NOTIFICATION, value.storageValue)?.apply()
-            syncService()
+            sync()
         }
 
     // ---- session --------------------------------------------------------
 
     /** Claims the test providers for an on-device session. */
-    fun start(): Boolean {
-        if (!claim()) return false
-        syncService()
-        return true
-    }
+    fun start(): Boolean = claim()
 
     /**
-     * Claims them for a desktop driving us over adb.
+     * Claims them, whoever is asking — the app's own screen or a desktop over
+     * adb.
      *
-     * Same session, minus the service: there is no clock to keep alive, so
-     * there is no reason to put anything in the shade.
+     * The desktop path gets no service, because there is no clock of ours to
+     * keep alive, but it does get the notification: from the device's point of
+     * view a desktop-driven session is exactly as invisible and exactly as
+     * disruptive as any other, and it is the one nobody can stop from the
+     * screen in front of them.
      */
     fun claim(): Boolean {
         val provider = provider() ?: return false
+        // a desktop claims the session again on every single fix
+        val wasActive = provider.active
         if (!provider.acquire()) {
             remember(false)
             return false
         }
         remember(true)
+        if (!wasActive) sync()
         return true
     }
 
@@ -167,7 +170,12 @@ object MockEngine {
         // that was started for it and has never touched the providers
         provider()?.release()
         remember(false)
-        appContext?.let { MockLocationService.stop(it) }
+        appContext?.let {
+            MockLocationService.stop(it)
+            // the service's own onDestroy would get here too, but only if it
+            // was running at all — a desktop's session never had one
+            MockNotification.cancel(it)
+        }
         if (wasActive) statusListener?.invoke()
     }
 
@@ -183,6 +191,7 @@ object MockEngine {
     fun adopt() {
         val provider = provider() ?: return
         if (remembered()) provider.acquire() else provider.release()
+        sync()
     }
 
     // ---- playback -------------------------------------------------------
@@ -192,7 +201,7 @@ object MockEngine {
         anchorPosition = 0.0
         anchorRealtime = SystemClock.elapsedRealtime()
         publish()
-        notificationListener?.invoke()
+        sync()
     }
 
     fun setPlaying(next: Boolean) {
@@ -202,18 +211,17 @@ object MockEngine {
         anchorRealtime = SystemClock.elapsedRealtime()
         playing = next
         if (next) startClock() else stopClock()
+        if (!next) publish()
         // the service exists for exactly this: a clock that keeps running once
         // the webview is no longer in front
-        syncService()
-        if (!next) publish()
-        notificationListener?.invoke()
+        sync()
     }
 
     fun seek(positionMs: Double) {
         anchorPosition = positionMs.coerceAtLeast(0.0)
         anchorRealtime = SystemClock.elapsedRealtime()
         publish()
-        notificationListener?.invoke()
+        sync()
     }
 
     fun setSpeedMultiplier(value: Double) {
@@ -259,8 +267,7 @@ object MockEngine {
                 if (playing) {
                     playing = false
                     stopClock()
-                    syncService()
-                    notificationListener?.invoke()
+                    sync()
                 }
                 ended = true
             }
@@ -285,11 +292,10 @@ object MockEngine {
      * that, so the shade is left alone in between.
      */
     private fun notifyProgress() {
-        val listener = notificationListener ?: return
         val now = SystemClock.elapsedRealtime()
         if (now - notifiedAt < NOTIFY_MS) return
         notifiedAt = now
-        listener.invoke()
+        sync()
     }
 
     // ---- clock ----------------------------------------------------------
@@ -316,24 +322,24 @@ object MockEngine {
         ticker = null
     }
 
-    // ---- service --------------------------------------------------------
+    // ---- service and shade ----------------------------------------------
 
     /**
-     * Starts or stops the foreground service to match the session.
+     * Brings the foreground service and the notification in line with the
+     * session.
      *
-     * Only ever reached from something the user did in the app, which is what
-     * keeps the start legal: a background start of a `location` service is
-     * refused unless the app is exempt, and the adb path never comes through
-     * here at all.
+     * The service is wanted for one reason and one only — a playback clock that
+     * has to keep running once the webview is no longer in front — so it is
+     * tied to playback and not to the notification, which the shade can hold
+     * perfectly well on its own. That is what lets a desktop's session be
+     * announced from a broadcast receiver, where starting a `location` service
+     * would be refused outright.
      */
-    private fun syncService() {
+    private fun sync() {
         val context = appContext ?: return
-        val wanted = when (mode) {
-            NotificationMode.ALWAYS -> active
-            NotificationMode.PLAYING -> active && playing
-            NotificationMode.NEVER -> false
-        }
-        if (wanted) MockLocationService.start(context) else MockLocationService.stop(context)
+        val wantsClock = active && playing && mode != NotificationMode.NEVER
+        if (wantsClock) MockLocationService.start(context) else MockLocationService.stop(context)
+        MockNotification.sync(context)
     }
 
     // ---- storage --------------------------------------------------------
