@@ -1,8 +1,10 @@
 package com.akylas.gpsmocker.mocklocation
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Criteria
 import android.location.Location
 import android.location.LocationListener
@@ -129,21 +131,30 @@ class MockProvider(private val context: Context) {
      * listening to it — which is why the device looked like it needed a reboot,
      * when what actually needed restarting was the app being tested.
      */
-    fun release() {
+    fun release(): Boolean {
+        if (!isSelectedAsMockApp()) {
+            // Every call below would only throw SecurityException, so there is
+            // nothing to try. Worse, the platform does *not* drop the override
+            // when the op goes away: whatever was registered stays on the
+            // providers, serving whatever it last published, and the only ways
+            // back are being selected again or rebooting. Nothing was handed
+            // back here, and saying otherwise is what would lose track of it.
+            Log.w(TAG, "not the selected mock app; cannot hand the providers back")
+            active = false
+            return false
+        }
+
+        var released = true
         for (provider in providers) {
             val removed = runCatching { locationManager.removeTestProvider(provider) }
             if (removed.isFailure) {
-                // could not hand it back — usually because the app is no longer
-                // the selected mock app, in which case the platform has already
-                // dropped the registration itself. Leaving it *enabled* is the
-                // one thing that matters: a registration we cannot remove and
-                // cannot re-enable is what survives until a reboot.
                 Log.w(TAG, "could not remove test provider $provider", removed.exceptionOrNull())
-                runCatching { locationManager.setTestProviderEnabled(provider, true) }
+                released = false
             }
         }
         active = false
-        rearm()
+        if (released) rearm()
+        return released
     }
 
     /**
@@ -156,6 +167,15 @@ class MockProvider(private val context: Context) {
      * provider's state, which is what nudges a stalled client back to life.
      */
     private fun rearm() {
+        // asking without it only earns a SecurityException per provider, and
+        // release runs on launch, long before the prompt has been shown
+        if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.i(TAG, "no location permission yet; not re-arming the real providers")
+            return
+        }
+
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {}
             override fun onProviderEnabled(provider: String) {}
@@ -172,7 +192,7 @@ class MockProvider(private val context: Context) {
             runCatching {
                 locationManager.requestLocationUpdates(provider, 0L, 0f, listener, looper)
                 requested = true
-            }.onFailure { Log.i(TAG, "cannot re-arm $provider", it) }
+            }.onFailure { Log.i(TAG, "cannot re-arm $provider: ${it.message}") }
         }
         if (!requested) return
         Handler(looper).postDelayed(

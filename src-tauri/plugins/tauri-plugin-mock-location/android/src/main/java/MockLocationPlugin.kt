@@ -107,6 +107,11 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun checkStatus(invoke: Invoke) {
+        // "Check again" on the setup card is how someone comes back from
+        // Developer options, and an override this app could not take off is
+        // exactly what they went there to fix — so reconcile before answering,
+        // rather than making them relaunch the app to get their GPS back
+        MockEngine.adopt()
         invoke.resolve(status())
     }
 
@@ -270,6 +275,7 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
             .put("available", true)
             .put("selectedAsMockApp", MockEngine.isSelectedAsMockApp())
             .put("mocking", MockEngine.active)
+            .put("stranded", MockEngine.stranded)
     }
 
     companion object {

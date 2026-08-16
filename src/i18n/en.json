@@ -79,6 +79,8 @@
     "mock_provider_running": "Publishing mocked locations",
     "mock_provider_setup": "Set this app as the mock location provider",
     "mock_provider_setup_hint": "Android only accepts mocked locations from the app selected under Developer options > Select mock location app. Pick GPS Mocker there, then come back.",
+    "mock_provider_stranded": "This device is still being mocked",
+    "mock_provider_stranded_hint": "A mock location override is still installed on this device, so no app can see the real GPS — and this app is no longer selected under Developer options > Select mock location app, which is the only way to take it off. Reinstalling the app or picking another one clears that selection. Select GPS Mocker there again, then stop mocking to hand the real GPS back.",
     "mocking": "Mocking",
     "move_here": "Move here",
     "next_maneuver": "Next maneuver",

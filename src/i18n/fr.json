@@ -79,6 +79,8 @@
     "mock_provider_running": "Positions simulées en cours",
     "mock_provider_setup": "Définir cette app comme fournisseur de position simulée",
     "mock_provider_setup_hint": "Android n'accepte les positions simulées que depuis l'application choisie dans Options pour les développeurs > Sélectionner l'application de position fictive. Choisissez GPS Mocker, puis revenez ici.",
+    "mock_provider_stranded": "Cet appareil est toujours simulé",
+    "mock_provider_stranded_hint": "Une position simulée est toujours installée sur cet appareil : aucune application ne voit le GPS réel. Or cette application n'est plus sélectionnée dans Options pour les développeurs > Sélectionner l'application de position fictive, seul moyen de la retirer. Réinstaller l'application ou en choisir une autre efface cette sélection. Sélectionnez à nouveau GPS Mocker, puis arrêtez la simulation pour rendre le GPS réel.",
     "mocking": "Simulation",
     "move_here": "Déplacer ici",
     "next_maneuver": "Prochaine manœuvre",

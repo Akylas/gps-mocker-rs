@@ -12,6 +12,15 @@ export interface MockStatus {
     selectedAsMockApp: boolean;
     /** the app currently holds the test providers, service or not */
     mocking: boolean;
+    /**
+     * A test provider override is still on the device and this app can no
+     * longer take it off, because it stopped being the selected mock app while
+     * holding it — the user picked another app, or reinstalled this one, which
+     * clears the selection. Until it is selected again nothing on the device
+     * sees the real GPS, and the reboot everyone reaches for is the only other
+     * way out.
+     */
+    stranded?: boolean;
 }
 
 /**
@@ -39,7 +48,7 @@ export interface MockProgress {
     speed?: number;
 }
 
-const OFFLINE: MockStatus = { available: false, selectedAsMockApp: false, mocking: false };
+const OFFLINE: MockStatus = { available: false, selectedAsMockApp: false, mocking: false, stranded: false };
 
 const state = writable<MockStatus>(OFFLINE);
 

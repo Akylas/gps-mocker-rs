@@ -53,6 +53,9 @@ object MockEngine {
     private const val KEY_SESSION = "session"
     private const val KEY_NOTIFICATION = "notification"
 
+    /** True once a release failed and left an override on the providers. */
+    private const val KEY_STRANDED = "stranded"
+
     private const val TICK_MS = 200L
 
     /** How often the notification's readout is allowed to be redrawn. */
@@ -107,6 +110,9 @@ object MockEngine {
         if (appContext != null) return
         appContext = context.applicationContext
         mode = NotificationMode.from(prefs()?.getString(KEY_NOTIFICATION, null))
+        // so the channel is in the app's notification settings from the first
+        // launch, rather than appearing only once a session has been started
+        appContext?.let { MockNotification.ensureChannel(it) }
     }
 
     // ---- state ----------------------------------------------------------
@@ -118,6 +124,22 @@ object MockEngine {
     val durationMs: Double get() = track?.durationMs ?: 0.0
 
     fun isSelectedAsMockApp(): Boolean = provider()?.isSelectedAsMockApp() ?: false
+
+    /**
+     * True when a test provider override is still on the device and this app
+     * can no longer take it off.
+     *
+     * That happens whenever the app stops being the selected mock app while it
+     * holds the providers — the user picks another app, or reinstalls this one,
+     * which clears the selection and changes the uid. The platform does not
+     * drop the override with the permission: it stays, serving whatever it last
+     * published, and no app on the device sees the real GPS again until this
+     * app is selected once more or the device reboots.
+     *
+     * Surfacing it is the whole point. The recovery is one tap away, but it is
+     * unguessable, and "my GPS is broken, I rebooted" is what happens instead.
+     */
+    val stranded: Boolean get() = remembered(KEY_STRANDED) && !isSelectedAsMockApp()
 
     var notificationMode: NotificationMode
         get() = mode
@@ -152,6 +174,10 @@ object MockEngine {
             return false
         }
         remember(true)
+        // an override is on the providers from here until a release takes it
+        // off, and only this app — while it is still the selected mock app —
+        // ever can
+        remember(true, KEY_STRANDED)
         if (!wasActive) sync()
         return true
     }
@@ -168,7 +194,7 @@ object MockEngine {
         anchorPosition = 0.0
         // provider(), not the field: a STOP off the wire can land in a process
         // that was started for it and has never touched the providers
-        provider()?.release()
+        if (provider()?.release() == true) remember(false, KEY_STRANDED)
         remember(false)
         appContext?.let {
             MockLocationService.stop(it)
@@ -190,7 +216,11 @@ object MockEngine {
      */
     fun adopt() {
         val provider = provider() ?: return
-        if (remembered()) provider.acquire() else provider.release()
+        if (remembered()) {
+            if (provider.acquire()) remember(true, KEY_STRANDED)
+        } else if (provider.release()) {
+            remember(false, KEY_STRANDED)
+        }
         sync()
     }
 
@@ -351,13 +381,13 @@ object MockEngine {
 
     private fun prefs() = appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    private fun remembered() = prefs()?.getBoolean(KEY_SESSION, false) ?: false
+    private fun remembered(key: String = KEY_SESSION) = prefs()?.getBoolean(key, false) ?: false
 
-    private fun remember(running: Boolean) {
+    private fun remember(value: Boolean, key: String = KEY_SESSION) {
         // a desktop claims the session again on every single fix, so this is
         // only ever written when it actually changes
         val prefs = prefs() ?: return
-        if (prefs.getBoolean(KEY_SESSION, false) == running) return
-        prefs.edit().putBoolean(KEY_SESSION, running).apply()
+        if (prefs.getBoolean(key, false) == value) return
+        prefs.edit().putBoolean(key, value).apply()
     }
 }

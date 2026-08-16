@@ -41,9 +41,11 @@
 </script>
 
 {#if !status.selectedAsMockApp}
-    <div class="card">
-        <p class="title">{$_('mock_provider_setup')}</p>
-        <p class="body">{$_('mock_provider_setup_hint')}</p>
+    <div class="card" class:stranded={status.stranded}>
+        <!-- the stuck case is the same screen with far more at stake: until the
+             app is selected again, nothing on the device sees the real GPS -->
+        <p class="title">{status.stranded ? $_('mock_provider_stranded') : $_('mock_provider_setup')}</p>
+        <p class="body">{status.stranded ? $_('mock_provider_stranded_hint') : $_('mock_provider_setup_hint')}</p>
         <div class="actions">
             <Button kind="primary" size="small" on:click={() => openDeveloperSettings()}>{$_('open_developer_settings')}</Button>
             <Button kind="ghost" size="small" on:click={() => refreshStatus()}>{$_('recheck')}</Button>
@@ -63,6 +65,13 @@
         border: 1px solid var(--border-strong);
         border-radius: var(--radius);
         background: var(--surface-raised);
+    }
+    .card.stranded {
+        border-color: var(--warning);
+        background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--surface-raised);
+    }
+    .card.stranded .title {
+        color: var(--warning-text);
     }
     .title {
         margin: 0;
