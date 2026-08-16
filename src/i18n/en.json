@@ -68,6 +68,8 @@
     "maneuvers_found": "{count} maneuvers",
     "manual_driving": "Manual driving",
     "map": "Map",
+    "map_unavailable": "The map could not start",
+    "map_unavailable_hint": "MapLibre needs WebGL, and this device did not give it one. On an Android emulator that usually means its GPU is on the WebView blocklist — start the emulator with hardware acceleration (-gpu host) or with -gpu swiftshader_indirect. Everything else on this screen still works.",
     "mapstyle_url": "Map style URL",
     "mapstyle_url_dark": "Map style URL (dark theme)",
     "mapstyle_url_help": "MapLibre style JSON. Applied as soon as you stop typing.",

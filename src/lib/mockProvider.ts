@@ -141,6 +141,33 @@ export async function onProgress(callback: (progress: MockProgress) => void): Pr
     return () => listener.unregister();
 }
 
+/**
+ * Keeps the store in step with sessions this webview did not start.
+ *
+ * A desktop claims the providers over adb, and the app can be open and on
+ * screen while it happens — polling on the next command would be too late, and
+ * showing "not mocking" over a mocked device is the one thing it must not do.
+ *
+ * The same goes for coming back to the app: a session can have started, or been
+ * stopped from the notification, while the webview was frozen.
+ */
+export async function onStatus(): Promise<() => void> {
+    if (!isSelfMocking) {
+        return () => undefined;
+    }
+    const listener: PluginListener = await addPluginListener<MockStatus>(PLUGIN, 'status', (status) => state.set(status));
+    const onVisible = () => {
+        if (document.visibilityState === 'visible') {
+            refreshStatus().catch((error) => console.warn('cannot refresh the mock status', error));
+        }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+        listener.unregister();
+        document.removeEventListener('visibilitychange', onVisible);
+    };
+}
+
 /** Fires when the service goes away, including from its own notification. */
 export async function onStopped(callback: () => void): Promise<() => void> {
     if (!isSelfMocking) {

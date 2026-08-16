@@ -90,9 +90,20 @@ object MockEngine {
     @Volatile
     var progressListener: ((Double, Boolean, Fix?) -> Unit)? = null
 
-    /** Fired when a session ends, so the UI can drop its mocking flag. */
+    /** Fired when a session ends, so the UI can stop its playback clock. */
     @Volatile
     var statusListener: (() -> Unit)? = null
+
+    /**
+     * Fired whenever a session starts or ends, with the new state.
+     *
+     * A session can begin without the webview having asked for it — a desktop
+     * claims over adb, and the app may well be open and on screen while it
+     * happens. Without this the app would go on showing "not mocking" over a
+     * device that is being mocked, which is the one thing it exists to say.
+     */
+    @Volatile
+    var sessionListener: ((Boolean) -> Unit)? = null
 
     private val tick = object : Runnable {
         override fun run() {
@@ -178,7 +189,10 @@ object MockEngine {
         // off, and only this app — while it is still the selected mock app —
         // ever can
         remember(true, KEY_STRANDED)
-        if (!wasActive) sync()
+        if (!wasActive) {
+            sync()
+            sessionListener?.invoke(true)
+        }
         return true
     }
 
@@ -202,7 +216,10 @@ object MockEngine {
             // was running at all — a desktop's session never had one
             MockNotification.cancel(it)
         }
-        if (wasActive) statusListener?.invoke()
+        if (wasActive) {
+            statusListener?.invoke()
+            sessionListener?.invoke(false)
+        }
     }
 
     /**

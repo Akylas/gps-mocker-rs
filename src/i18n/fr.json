@@ -68,6 +68,8 @@
     "maneuvers_found": "{count} manœuvres",
     "manual_driving": "Conduite manuelle",
     "map": "Carte",
+    "map_unavailable": "La carte n'a pas pu démarrer",
+    "map_unavailable_hint": "MapLibre a besoin de WebGL, que cet appareil n'a pas fourni. Sur un émulateur Android, cela signifie en général que son GPU figure sur la liste de blocage de WebView : démarrez l'émulateur avec l'accélération matérielle (-gpu host) ou avec -gpu swiftshader_indirect. Le reste de cet écran fonctionne toujours.",
     "mapstyle_url": "URL des données de carte",
     "mapstyle_url_dark": "URL du style de carte (thème sombre)",
     "mapstyle_url_help": "Style MapLibre JSON. Appliqué dès que vous arrêtez de taper.",

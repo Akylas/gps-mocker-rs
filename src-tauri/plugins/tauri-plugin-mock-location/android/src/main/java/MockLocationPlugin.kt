@@ -103,6 +103,11 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
         MockEngine.statusListener = {
             trigger("stopped", JSObject())
         }
+        // a desktop can claim the providers over adb while this app is open and
+        // on screen; without this the UI would keep saying "not mocking"
+        MockEngine.sessionListener = {
+            trigger("status", status())
+        }
     }
 
     @Command
