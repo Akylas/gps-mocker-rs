@@ -76,6 +76,8 @@
     "match_too_different": "Valhalla n'a reconnu que {matched} sur {original} de la trace ; rien n'a été modifié. La trace quitte probablement le réseau routier.",
     "min_slowdown_factor": "Vitesse minimale en manœuvre",
     "mock_banner": "Le GPS réel est désactivé pour toutes les applications de cet appareil.",
+    "mock_banner_off": "Simulation désactivée — aucun appareil ne reçoit de position simulée.",
+    "mock_banner_remote": "Chaque appareil connecté reçoit une position simulée à la place de son GPS réel.",
     "mock_enabled": "Envoyer la position simulée",
     "mock_provider_idle": "Prêt, aucune position publiée",
     "mock_provider_running": "Positions simulées en cours",

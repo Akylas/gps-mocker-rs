@@ -56,7 +56,7 @@
     import Button from './ui/Button.svelte';
     import { resolvedTheme, setThemePreference, type ThemePreference } from '../lib/theme';
     import { followSystemBars } from '../lib/systemBars';
-    import { adbDevices, checkReadiness, forgetPrepared, refreshDevices, resolveSerials, sendLocation, setupCommands, type AdbDevice } from '../lib/adb';
+    import { adbDevices, AdbTargetError, checkReadiness, forgetPrepared, refreshDevices, resolveSerials, sendLocation, setupCommands, syncMockingToDevices as syncMocking, type AdbDevice } from '../lib/adb';
 
     /* ---------------------------------------------------------------- *
      * platform + settings                                              *
@@ -106,7 +106,7 @@
         terrainExaggeration: 1,
         terrain3d: false,
         hillshade: false,
-        mockEnabled: false,
+        mockEnabled: true,
         /** Android only: when the app may show its own notification. */
         androidNotification: 'always' as NotificationMode,
         // playback
@@ -711,6 +711,11 @@
                 // so the device picker in the settings is populated before it
                 // is ever opened
                 refreshDevices().catch((error) => console.warn('cannot list adb devices', error));
+                // deliberately not pushing the switch across on the way up: the
+                // switch starts on, and claiming from here would take the real
+                // GPS off an attached phone for nothing more than opening the
+                // desktop app. The first fix that is actually sent claims, and
+                // moving the switch by hand claims too.
             }
         } catch (error) {
             console.error(error);
@@ -1663,9 +1668,39 @@
     function toggleMocking(next = !mockActive) {
         if (isSelfMocking) {
             (next ? startMocking() : stopMocking()).catch(reportMockError);
-        } else {
-            $store.mockEnabled = next;
+            return;
         }
+        $store.mockEnabled = next;
+        syncMockingToDevices(next);
+    }
+
+    /**
+     * Carries the desktop's switch across to the devices it drives.
+     *
+     * The flag above is local and the test providers are held on the far side
+     * of adb, so on its own it only decides whether fixes are sent. Stopping
+     * without this left a phone holding the providers — warning still in the
+     * shade, every app on it still refused a real fix — for a session the
+     * desktop believed it had ended.
+     *
+     * Nothing attached is not a failure worth a panel: the switch is the
+     * desktop's own, and it stays where it was put whether or not there is
+     * anything to tell.
+     */
+    function syncMockingToDevices(mocking: boolean) {
+        if (isSelfMocking || !isTauri || !settings.androidEmulators) {
+            return;
+        }
+        syncMocking($store.adbTarget, mocking).catch((error) => {
+            if (error instanceof AdbTargetError) {
+                console.info('no device to sync the mock state to', error.message);
+                return;
+            }
+            const message = errorMessage(error);
+            startTask($_('android_emulators'), [{ label: message }]);
+            updateStep(0, 'error', message);
+            finish();
+        });
     }
 
     function reportMockError(error: unknown) {
@@ -1698,16 +1733,18 @@
         </div>
     {/if}
 
-    <!-- Both shells get this. Mocking is invisible from anywhere else — on a
-         phone the notification carrying the same warning is a swipe away at
-         best, and on the desktop there is no notification at all, so the only
-         other sign used to be a settings toggle nobody had open. -->
-    {#if mockActive}
-        <div class="mock-banner" class:rail-offset={!$compact} role="status">
-            <span>{$_('mock_banner')}</span>
-            <Button size="small" kind="secondary" on:click={() => toggleMocking(false)}>{$_('stop_mocking')}</Button>
-        </div>
-    {/if}
+    <!-- Both shells, both states. Mocking is the whole point of the app and it
+         is invisible from anywhere else: on a phone the notification carrying
+         the same warning is a swipe away at best, on the desktop there is no
+         notification at all, and a run that is quietly off looks exactly like
+         one that is broken. -->
+    <div class="mock-banner" class:off={!mockActive} class:rail-offset={!$compact} role="status">
+        <!-- "this device" is only true where the app holds the providers itself -->
+        <span>{mockActive ? $_(isSelfMocking ? 'mock_banner' : 'mock_banner_remote') : $_('mock_banner_off')}</span>
+        <Button size="small" kind="secondary" on:click={() => toggleMocking()}>
+            {mockActive ? $_('stop_mocking') : $_('start_mocking')}
+        </Button>
+    </div>
 
     <!-- ---------------------------------------------------------------- *
          pointer shell: icon rail, sliding inspector, docked transport
@@ -2156,6 +2193,14 @@
         border: 1px solid var(--warning);
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow);
+    }
+
+    /* off is a statement of fact, not a warning: same place, same shape, none
+       of the colour that means "your real GPS is gone" */
+    .mock-banner.off {
+        color: var(--text-muted);
+        background: var(--surface);
+        border-color: var(--border);
     }
 
     .mock-banner span {

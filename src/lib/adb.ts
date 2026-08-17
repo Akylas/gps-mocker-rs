@@ -280,10 +280,31 @@ async function prepareQuietly(serial: string): Promise<Readiness> {
     return checkReadiness(serial);
 }
 
-/** Releases the test providers and stops the service on the device. */
-export async function stopMockingOnDevice(target: AdbTarget) {
+/**
+ * Puts every target into the mocking state the desktop is in.
+ *
+ * The desktop's switch is a local flag, and the providers are held on the far
+ * side of adb: without this the two drift apart the moment the switch moves,
+ * which is a phone still showing its warning — and still refusing every app on
+ * it a real fix — for a session the desktop believes it ended.
+ *
+ * Claiming goes through the full setup, so turning mocking on is also what
+ * makes a device ready for it.
+ */
+export async function syncMockingToDevices(target: AdbTarget, mocking: boolean) {
     const serials = await resolveSerials(target);
-    await Promise.all(serials.map((serial) => broadcast(serial, ACTION_STOP)));
+    await Promise.all(
+        serials.map(async (serial) => {
+            if (!mocking) {
+                await broadcast(serial, ACTION_STOP);
+                return;
+            }
+            const readiness = await ensureReady(serial);
+            if (!readiness.ready) {
+                throw new Error(`${serial}: ${readiness.detail}`);
+            }
+        })
+    );
 }
 
 /** What the fix was doing, when the caller knows. */

@@ -76,6 +76,8 @@
     "match_too_different": "Valhalla only matched {matched} of the {original} track, so nothing was changed. The track probably leaves the road network.",
     "min_slowdown_factor": "Slowest speed in a maneuver",
     "mock_banner": "Real GPS is off for every app on this device.",
+    "mock_banner_off": "Mocking is off — nothing is receiving a mocked position.",
+    "mock_banner_remote": "Every attached device is getting a mocked position instead of its real GPS.",
     "mock_enabled": "Send mocked position",
     "mock_provider_idle": "Ready, not publishing",
     "mock_provider_running": "Publishing mocked locations",
