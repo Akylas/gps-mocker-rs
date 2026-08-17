@@ -122,6 +122,7 @@
     "smart_slowdown_hint": "La vitesse est réduite pour le virage à venir",
     "snap_to_roads": "Aligner la trace sur les routes",
     "speed": "Vitesse",
+    "start_mocking": "Démarrer la simulation",
     "stop": "Arrêt",
     "stop_mocking": "Arrêter la simulation",
     "task_allow_background": "Autoriser l'assistant à s'exécuter en arrière-plan",

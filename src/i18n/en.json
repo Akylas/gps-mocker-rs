@@ -122,6 +122,7 @@
     "smart_slowdown_hint": "Speed is scaled down for the turn ahead",
     "snap_to_roads": "Snap the track to roads when computing",
     "speed": "Speed",
+    "start_mocking": "Start mocking",
     "stop": "Stop",
     "stop_mocking": "Stop mocking",
     "task_allow_background": "Allow the helper to run in the background",

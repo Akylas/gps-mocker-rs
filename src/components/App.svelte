@@ -43,7 +43,7 @@
     import UserLocationControl from './UserLocationControl';
     import { compact, type Detent } from '../lib/layout';
     import { host, isDesktop, isSelfMocking } from '../lib/platform';
-    import { mockStatus, onProgress, onStatus, onStopped, refreshStatus, setNotificationMode, stopMocking, type NotificationMode } from '../lib/mockProvider';
+    import { mockStatus, onProgress, onStatus, onStopped, refreshStatus, setNotificationMode, startMocking, stopMocking, type NotificationMode } from '../lib/mockProvider';
     import { alongAtPosition, clearTrack, isDriving, pushFix, syncPlayback, syncRoute } from '../lib/nativePlayback';
     import DrivePad from './DrivePad.svelte';
     import Reticle from './Reticle.svelte';
@@ -1652,11 +1652,19 @@
      */
     $: mockActive = isSelfMocking ? $mockStatus.mocking : $store.mockEnabled;
 
-    function disableMocking() {
+    /**
+     * The one switch, wherever it is pressed.
+     *
+     * Turning it off used to be the only thing offered, which left the desktop
+     * with no way back: the flag it clears is the same one pushToDevices tests
+     * before sending anything, so a stopped session looked like a broken one —
+     * fixes silently going nowhere, and nothing on screen admitting it.
+     */
+    function toggleMocking(next = !mockActive) {
         if (isSelfMocking) {
-            stopMocking().catch(reportMockError);
+            (next ? startMocking() : stopMocking()).catch(reportMockError);
         } else {
-            $store.mockEnabled = false;
+            $store.mockEnabled = next;
         }
     }
 
@@ -1697,7 +1705,7 @@
     {#if mockActive}
         <div class="mock-banner" class:rail-offset={!$compact} role="status">
             <span>{$_('mock_banner')}</span>
-            <Button size="small" kind="secondary" on:click={disableMocking}>{$_('stop_mocking')}</Button>
+            <Button size="small" kind="secondary" on:click={() => toggleMocking(false)}>{$_('stop_mocking')}</Button>
         </div>
     {/if}
 
@@ -1713,9 +1721,15 @@
                 <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
             </svelte:fragment>
             <svelte:fragment slot="bottom">
-                {#if mockActive}
-                    <IconButton icon={LocationFilled} label={$_('stop_mocking')} active on:click={disableMocking} />
-                {/if}
+                <!-- always here, never only while it is on: it is both the
+                     state and the switch, and hiding it when off is what left
+                     the desktop with nothing to turn back on -->
+                <IconButton
+                    icon={LocationFilled}
+                    label={mockActive ? $_('stop_mocking') : $_('start_mocking')}
+                    active={mockActive}
+                    on:click={() => toggleMocking()}
+                />
                 <IconButton icon={Settings} label={$_('settings')} active={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)} />
             </svelte:fragment>
         </Rail>
@@ -1772,6 +1786,12 @@
             <IconButton icon={GameConsole} label={$_('manual_driving')} active={padOpen} on:click={() => (padOpen = !padOpen)} />
             <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
             <IconButton icon={Location} label={$_('drop_pin')} active={placeMode} on:click={() => (placeMode = !placeMode)} />
+            <IconButton
+                icon={LocationFilled}
+                label={mockActive ? $_('stop_mocking') : $_('start_mocking')}
+                active={mockActive}
+                on:click={() => toggleMocking()}
+            />
         </div>
 
         {#if padOpen}
