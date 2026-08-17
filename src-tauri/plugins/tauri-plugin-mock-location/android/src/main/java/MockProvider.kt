@@ -1,12 +1,18 @@
 package com.akylas.gpsmocker.mocklocation
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Criteria
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -113,12 +119,86 @@ class MockProvider(private val context: Context) {
         return active
     }
 
-    fun release() {
+    /**
+     * Hands the providers back and gets real fixes flowing again.
+     *
+     * Deliberately does *not* disable the test provider on the way out.
+     * `setTestProviderEnabled(false)` does not mean "stop mocking", it means
+     * "this provider is off", and the platform broadcasts exactly that: every
+     * client on the device gets onProviderDisabled(gps), and a client that has
+     * been told GPS is gone stops asking for it. removeTestProvider a moment
+     * later does restore the real provider, but by then there is nobody left
+     * listening to it — which is why the device looked like it needed a reboot,
+     * when what actually needed restarting was the app being tested.
+     */
+    fun release(): Boolean {
+        if (!isSelectedAsMockApp()) {
+            // Every call below would only throw SecurityException, so there is
+            // nothing to try. Worse, the platform does *not* drop the override
+            // when the op goes away: whatever was registered stays on the
+            // providers, serving whatever it last published, and the only ways
+            // back are being selected again or rebooting. Nothing was handed
+            // back here, and saying otherwise is what would lose track of it.
+            Log.w(TAG, "not the selected mock app; cannot hand the providers back")
+            active = false
+            return false
+        }
+
+        var released = true
         for (provider in providers) {
-            runCatching { locationManager.setTestProviderEnabled(provider, false) }
-            runCatching { locationManager.removeTestProvider(provider) }
+            val removed = runCatching { locationManager.removeTestProvider(provider) }
+            if (removed.isFailure) {
+                Log.w(TAG, "could not remove test provider $provider", removed.exceptionOrNull())
+                released = false
+            }
         }
         active = false
+        if (released) rearm()
+        return released
+    }
+
+    /**
+     * Asks the platform for real fixes for a few seconds after a release.
+     *
+     * Removing a test provider restores the real one, but nothing re-arms it:
+     * the GNSS engine is only powered while somebody has a request in, and a
+     * client that gave up during the session has none. One short real request
+     * turns the hardware back on and makes the platform re-publish the
+     * provider's state, which is what nudges a stalled client back to life.
+     */
+    private fun rearm() {
+        // asking without it only earns a SecurityException per provider, and
+        // release runs on launch, long before the prompt has been shown
+        if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.i(TAG, "no location permission yet; not re-arming the real providers")
+            return
+        }
+
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+
+            @Deprecated("still abstract below API 30")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        }
+
+        val looper = Looper.getMainLooper()
+        var requested = false
+        for (provider in providers) {
+            // no permission, or a provider the device does not have
+            runCatching {
+                locationManager.requestLocationUpdates(provider, 0L, 0f, listener, looper)
+                requested = true
+            }.onFailure { Log.i(TAG, "cannot re-arm $provider: ${it.message}") }
+        }
+        if (!requested) return
+        Handler(looper).postDelayed(
+            { runCatching { locationManager.removeUpdates(listener) } },
+            REARM_MS
+        )
     }
 
     fun push(fix: Fix) {
@@ -146,5 +226,8 @@ class MockProvider(private val context: Context) {
 
     companion object {
         private const val TAG = "MockProvider"
+
+        /** Long enough for the GNSS engine to actually come back up. */
+        private const val REARM_MS = 5_000L
     }
 }

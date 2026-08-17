@@ -230,10 +230,81 @@ export function setupCommands(serial: string): { labelKey: string; command: stri
     ];
 }
 
-/** Releases the test providers and stops the service on the device. */
-export async function stopMockingOnDevice(target: AdbTarget) {
+/**
+ * The same setup, applied on its own the first time a device turns out to need
+ * it — once per device per session.
+ *
+ * Every command in it is idempotent and none of it puts anything on the
+ * device's screen, which is what makes it safe to run off a fix that came back
+ * refused instead of making someone go and find "Prepare device" first. The one
+ * thing it will not do is install the app: that is a download, and a download
+ * is the user's call.
+ *
+ * The result is cached either way. A device that cannot be fixed must not have
+ * eight adb commands thrown at it five times a second for the rest of the
+ * session; "Prepare device" clears the cache, so the manual route always
+ * retries.
+ */
+const preparing = new Map<string, Promise<Readiness>>();
+
+export function ensureReady(serial: string): Promise<Readiness> {
+    let pending = preparing.get(serial);
+    if (!pending) {
+        pending = prepareQuietly(serial);
+        preparing.set(serial, pending);
+    }
+    return pending;
+}
+
+/** Drops the cache, so the next send re-runs the setup. */
+export function forgetPrepared(serial?: string) {
+    if (serial) {
+        preparing.delete(serial);
+    } else {
+        preparing.clear();
+    }
+}
+
+async function prepareQuietly(serial: string): Promise<Readiness> {
+    if (!(await isInstalled(serial))) {
+        return { ready: false, reason: 'not-installed', detail: 'GPS Mocker is not installed on this device' };
+    }
+    for (const { command } of setupCommands(serial)) {
+        const [cmd, ...args] = command.split(' ');
+        // a step that fails is not fatal on its own: the readiness check below
+        // is the only thing that decides whether the device is usable
+        await Command.create(cmd, args)
+            .execute()
+            .catch(() => undefined);
+    }
+    return checkReadiness(serial);
+}
+
+/**
+ * Puts every target into the mocking state the desktop is in.
+ *
+ * The desktop's switch is a local flag, and the providers are held on the far
+ * side of adb: without this the two drift apart the moment the switch moves,
+ * which is a phone still showing its warning — and still refusing every app on
+ * it a real fix — for a session the desktop believes it ended.
+ *
+ * Claiming goes through the full setup, so turning mocking on is also what
+ * makes a device ready for it.
+ */
+export async function syncMockingToDevices(target: AdbTarget, mocking: boolean) {
     const serials = await resolveSerials(target);
-    await Promise.all(serials.map((serial) => broadcast(serial, ACTION_STOP)));
+    await Promise.all(
+        serials.map(async (serial) => {
+            if (!mocking) {
+                await broadcast(serial, ACTION_STOP);
+                return;
+            }
+            const readiness = await ensureReady(serial);
+            if (!readiness.ready) {
+                throw new Error(`${serial}: ${readiness.detail}`);
+            }
+        })
+    );
 }
 
 /** What the fix was doing, when the caller knows. */
@@ -288,10 +359,18 @@ export async function sendLocation(position: Position, target: AdbTarget, motion
 
             // A broadcast nobody handled still "completes", so the result code
             // is the only honest signal. Anything but OK means the device is
-            // not set up, and it says which part is missing.
+            // not set up — so set it up and send again, rather than reporting a
+            // failure whose fix is a button in a settings panel.
             if (resultCodeOf(result.stdout) !== RESULT_OK) {
-                const readiness = await checkReadiness(serial);
-                throw new Error(readiness.ready ? `${serial}: the fix was not accepted` : `${serial}: ${readiness.detail} — run “Prepare device”`);
+                const readiness = await ensureReady(serial);
+                if (!readiness.ready) {
+                    const manual = readiness.reason === 'not-installed' ? ' — run “Prepare device”' : '';
+                    throw new Error(`${serial}: ${readiness.detail}${manual}`);
+                }
+                const retry = await broadcast(serial, ACTION_SET_LOCATION, extras);
+                if (resultCodeOf(retry.stdout) !== RESULT_OK) {
+                    throw new Error(`${serial}: the fix was not accepted`);
+                }
             }
         })
     );

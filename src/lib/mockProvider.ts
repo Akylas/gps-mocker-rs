@@ -12,15 +12,28 @@ export interface MockStatus {
     selectedAsMockApp: boolean;
     /** the app currently holds the test providers, service or not */
     mocking: boolean;
+    /**
+     * A test provider override is still on the device and this app can no
+     * longer take it off, because it stopped being the selected mock app while
+     * holding it — the user picked another app, or reinstalled this one, which
+     * clears the selection. Until it is selected again nothing on the device
+     * sees the real GPS, and the reboot everyone reaches for is the only other
+     * way out.
+     */
+    stranded?: boolean;
 }
 
 /**
- * When the Android build may show its foreground-service notification.
+ * When the Android build may put its ongoing notification in the shade.
  *
- * That service only exists to keep the playback clock running while another app
- * is in front, so this decides whether there is a service at all: `never` means
- * playback stops surviving the app going to the background, and mocking driven
- * from a desktop over adb never starts one either way.
+ * `always` — the default — is what tells the person holding the device that
+ * every app on it is reading a mocked position, including when a desktop is the
+ * one driving over adb. It also carries the only Stop button reachable from
+ * outside the app.
+ *
+ * `never` costs more than the notification: the playback clock lives in a
+ * foreground service, a foreground service must show one, so `never` means
+ * on-device playback stops surviving the app going to the background.
  */
 export type NotificationMode = 'always' | 'playing' | 'never';
 
@@ -35,7 +48,7 @@ export interface MockProgress {
     speed?: number;
 }
 
-const OFFLINE: MockStatus = { available: false, selectedAsMockApp: false, mocking: false };
+const OFFLINE: MockStatus = { available: false, selectedAsMockApp: false, mocking: false, stranded: false };
 
 const state = writable<MockStatus>(OFFLINE);
 
@@ -126,6 +139,33 @@ export async function onProgress(callback: (progress: MockProgress) => void): Pr
     }
     const listener: PluginListener = await addPluginListener<MockProgress>(PLUGIN, 'progress', callback);
     return () => listener.unregister();
+}
+
+/**
+ * Keeps the store in step with sessions this webview did not start.
+ *
+ * A desktop claims the providers over adb, and the app can be open and on
+ * screen while it happens — polling on the next command would be too late, and
+ * showing "not mocking" over a mocked device is the one thing it must not do.
+ *
+ * The same goes for coming back to the app: a session can have started, or been
+ * stopped from the notification, while the webview was frozen.
+ */
+export async function onStatus(): Promise<() => void> {
+    if (!isSelfMocking) {
+        return () => undefined;
+    }
+    const listener: PluginListener = await addPluginListener<MockStatus>(PLUGIN, 'status', (status) => state.set(status));
+    const onVisible = () => {
+        if (document.visibilityState === 'visible') {
+            refreshStatus().catch((error) => console.warn('cannot refresh the mock status', error));
+        }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+        listener.unregister();
+        document.removeEventListener('visibilitychange', onVisible);
+    };
 }
 
 /** Fires when the service goes away, including from its own notification. */

@@ -14,7 +14,9 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 
 @InvokeArg
 class SampleArg {
@@ -80,6 +82,7 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: android.webkit.WebView) {
         super.load(webView)
+        observeInsets(webView)
 
         MockEngine.attach(activity.applicationContext)
         // takes back a session we remember — which may be a desktop's, running
@@ -103,10 +106,66 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
         MockEngine.statusListener = {
             trigger("stopped", JSObject())
         }
+        // a desktop can claim the providers over adb while this app is open and
+        // on screen; without this the UI would keep saying "not mocking"
+        MockEngine.sessionListener = {
+            trigger("status", status())
+        }
+    }
+
+    /**
+     * Publishes the window insets as the shell's `--safe-*` CSS variables.
+     *
+     * `env(safe-area-inset-*)` looks like it should cover this, and on iOS it
+     * does. On Android it only ever reports the display cutout: Chromium does
+     * not fold the status bar or the navigation bar into it, so on a
+     * three-button device `env(safe-area-inset-bottom)` is 0 while 48dp of
+     * navigation bar sits on top of the app — which is exactly the strip the
+     * sheet's buttons were disappearing under. The stylesheet's floors are a
+     * guess; these are the real numbers.
+     *
+     * Written straight onto the document rather than sent as an event, so they
+     * are right from the first frame instead of from whenever the webview gets
+     * around to subscribing.
+     */
+    private fun observeInsets(webView: android.webkit.WebView) {
+        val root = activity.window.decorView
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            publishInsets(webView, insets)
+            insets
+        }
+        // the listener only fires on a change, and the first dispatch is long
+        // gone by the time a plugin is loaded
+        webView.post {
+            ViewCompat.getRootWindowInsets(root)?.let { publishInsets(webView, it) }
+            ViewCompat.requestApplyInsets(root)
+        }
+    }
+
+    private fun publishInsets(webView: android.webkit.WebView, insets: WindowInsetsCompat) {
+        val bars = insets.getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+        )
+        // a CSS pixel in a WebView is a dp, which is what the shell lays out in
+        val density = activity.resources.displayMetrics.density
+        val script = buildString {
+            append("(function(s){")
+            append("s.setProperty('--safe-top','${bars.top / density}px');")
+            append("s.setProperty('--safe-bottom','${bars.bottom / density}px');")
+            append("s.setProperty('--safe-left','${bars.left / density}px');")
+            append("s.setProperty('--safe-right','${bars.right / density}px');")
+            append("})(document.documentElement.style)")
+        }
+        webView.post { webView.evaluateJavascript(script, null) }
     }
 
     @Command
     fun checkStatus(invoke: Invoke) {
+        // "Check again" on the setup card is how someone comes back from
+        // Developer options, and an override this app could not take off is
+        // exactly what they went there to fix — so reconcile before answering,
+        // rather than making them relaunch the app to get their GPS back
+        MockEngine.adopt()
         invoke.resolve(status())
     }
 
@@ -270,6 +329,7 @@ class MockLocationPlugin(private val activity: Activity) : Plugin(activity) {
             .put("available", true)
             .put("selectedAsMockApp", MockEngine.isSelectedAsMockApp())
             .put("mocking", MockEngine.active)
+            .put("stranded", MockEngine.stranded)
     }
 
     companion object {

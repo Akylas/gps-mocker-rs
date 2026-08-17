@@ -78,8 +78,8 @@
             bind:value={$store.androidNotification}
             label={$_('android_notification')}
             options={[
-                { value: 'playing', label: $_('android_notification_playing') },
                 { value: 'always', label: $_('android_notification_always') },
+                { value: 'playing', label: $_('android_notification_playing') },
                 { value: 'never', label: $_('android_notification_never') }
             ]}
         />

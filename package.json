@@ -21,7 +21,7 @@
     },
     "scripts": {
         "dev": "tauri dev",
-        "dev:web": "vite",
+        "dev:web": "mkdir -p build && vite",
         "tauri": "tauri",
         "build": "NODE_ENV=production tauri build",
         "build:web": "vite build",

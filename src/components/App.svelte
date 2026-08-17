@@ -43,7 +43,7 @@
     import UserLocationControl from './UserLocationControl';
     import { compact, type Detent } from '../lib/layout';
     import { host, isDesktop, isSelfMocking } from '../lib/platform';
-    import { mockStatus, onProgress, onStopped, refreshStatus, setNotificationMode, stopMocking, type NotificationMode } from '../lib/mockProvider';
+    import { mockStatus, onProgress, onStatus, onStopped, refreshStatus, setNotificationMode, startMocking, stopMocking, type NotificationMode } from '../lib/mockProvider';
     import { alongAtPosition, clearTrack, isDriving, pushFix, syncPlayback, syncRoute } from '../lib/nativePlayback';
     import DrivePad from './DrivePad.svelte';
     import Reticle from './Reticle.svelte';
@@ -56,7 +56,7 @@
     import Button from './ui/Button.svelte';
     import { resolvedTheme, setThemePreference, type ThemePreference } from '../lib/theme';
     import { followSystemBars } from '../lib/systemBars';
-    import { adbDevices, checkReadiness, refreshDevices, resolveSerials, sendLocation, setupCommands, type AdbDevice } from '../lib/adb';
+    import { adbDevices, AdbTargetError, checkReadiness, forgetPrepared, refreshDevices, resolveSerials, sendLocation, setupCommands, syncMockingToDevices as syncMocking, type AdbDevice } from '../lib/adb';
 
     /* ---------------------------------------------------------------- *
      * platform + settings                                              *
@@ -106,9 +106,9 @@
         terrainExaggeration: 1,
         terrain3d: false,
         hillshade: false,
-        mockEnabled: false,
+        mockEnabled: true,
         /** Android only: when the app may show its own notification. */
-        androidNotification: 'playing' as NotificationMode,
+        androidNotification: 'always' as NotificationMode,
         // playback
         playbackSpeed: 50,
         speedMultiplier: 1,
@@ -318,6 +318,8 @@
     // and touches them on its very first emission
     let map: Map;
     let mapContainer;
+    /** Set when the map never came up at all; see the onMount catch. */
+    let mapError: string | undefined;
     let layers: RouteLayers;
     let userLocationControl: UserLocationControl;
     let currentPosition: Position = settings.position;
@@ -709,9 +711,19 @@
                 // so the device picker in the settings is populated before it
                 // is ever opened
                 refreshDevices().catch((error) => console.warn('cannot list adb devices', error));
+                // deliberately not pushing the switch across on the way up: the
+                // switch starts on, and claiming from here would take the real
+                // GPS off an attached phone for nothing more than opening the
+                // desktop app. The first fix that is actually sent claims, and
+                // moving the switch by hand claims too.
             }
         } catch (error) {
             console.error(error);
+            // A blank screen is the worst way to report this, and it is what
+            // used to happen: MapLibre needs WebGL, an Android emulator whose
+            // GPU is on Chromium's blocklist has none, and everything after the
+            // throw — including the controls — silently never ran.
+            mapError = errorMessage(error);
         }
 
         if (isSelfMocking) {
@@ -737,6 +749,9 @@
             });
             // the notification's stop button kills the service from outside
             unlistenStopped = await onStopped(() => player.pause());
+            // a desktop can claim the providers over adb behind this screen's
+            // back, and the notification can stop them while it is frozen
+            unlistenStatus = await onStatus();
         }
     });
 
@@ -744,6 +759,7 @@
     const DRIFT_TOLERANCE_M = 15;
     let unlistenProgress: () => void = () => undefined;
     let unlistenStopped: () => void = () => undefined;
+    let unlistenStatus: () => void = () => undefined;
     const unfollowSystemBars = followSystemBars();
 
     onDestroy(() => {
@@ -751,6 +767,7 @@
         player.destroy();
         unlistenProgress();
         unlistenStopped();
+        unlistenStatus();
         unfollowSystemBars();
     });
 
@@ -1312,6 +1329,10 @@
             return;
         }
 
+        // the automatic pass caches its verdict per device; this button is how
+        // someone says "try again", so it has to forget that first
+        forgetPrepared();
+
         for (const serial of serials) {
             const on = serials.length > 1 ? ` (${serial})` : '';
             const readiness = await checkReadiness(serial);
@@ -1636,12 +1657,50 @@
      */
     $: mockActive = isSelfMocking ? $mockStatus.mocking : $store.mockEnabled;
 
-    function disableMocking() {
+    /**
+     * The one switch, wherever it is pressed.
+     *
+     * Turning it off used to be the only thing offered, which left the desktop
+     * with no way back: the flag it clears is the same one pushToDevices tests
+     * before sending anything, so a stopped session looked like a broken one —
+     * fixes silently going nowhere, and nothing on screen admitting it.
+     */
+    function toggleMocking(next = !mockActive) {
         if (isSelfMocking) {
-            stopMocking().catch(reportMockError);
-        } else {
-            $store.mockEnabled = false;
+            (next ? startMocking() : stopMocking()).catch(reportMockError);
+            return;
         }
+        $store.mockEnabled = next;
+        syncMockingToDevices(next);
+    }
+
+    /**
+     * Carries the desktop's switch across to the devices it drives.
+     *
+     * The flag above is local and the test providers are held on the far side
+     * of adb, so on its own it only decides whether fixes are sent. Stopping
+     * without this left a phone holding the providers — warning still in the
+     * shade, every app on it still refused a real fix — for a session the
+     * desktop believed it had ended.
+     *
+     * Nothing attached is not a failure worth a panel: the switch is the
+     * desktop's own, and it stays where it was put whether or not there is
+     * anything to tell.
+     */
+    function syncMockingToDevices(mocking: boolean) {
+        if (isSelfMocking || !isTauri || !settings.androidEmulators) {
+            return;
+        }
+        syncMocking($store.adbTarget, mocking).catch((error) => {
+            if (error instanceof AdbTargetError) {
+                console.info('no device to sync the mock state to', error.message);
+                return;
+            }
+            const message = errorMessage(error);
+            startTask($_('android_emulators'), [{ label: message }]);
+            updateStep(0, 'error', message);
+            finish();
+        });
     }
 
     function reportMockError(error: unknown) {
@@ -1666,6 +1725,27 @@
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="map" id="map" bind:this={mapContainer} on:pointerdown={collapseSheet} />
 
+    {#if mapError}
+        <div class="map-error">
+            <p class="map-error-title">{$_('map_unavailable')}</p>
+            <p class="map-error-body">{$_('map_unavailable_hint')}</p>
+            <p class="map-error-detail">{mapError}</p>
+        </div>
+    {/if}
+
+    <!-- Both shells, both states. Mocking is the whole point of the app and it
+         is invisible from anywhere else: on a phone the notification carrying
+         the same warning is a swipe away at best, on the desktop there is no
+         notification at all, and a run that is quietly off looks exactly like
+         one that is broken. -->
+    <div class="mock-banner" class:off={!mockActive} class:rail-offset={!$compact} role="status">
+        <!-- "this device" is only true where the app holds the providers itself -->
+        <span>{mockActive ? $_(isSelfMocking ? 'mock_banner' : 'mock_banner_remote') : $_('mock_banner_off')}</span>
+        <Button size="small" kind="secondary" on:click={() => toggleMocking()}>
+            {mockActive ? $_('stop_mocking') : $_('start_mocking')}
+        </Button>
+    </div>
+
     <!-- ---------------------------------------------------------------- *
          pointer shell: icon rail, sliding inspector, docked transport
          ---------------------------------------------------------------- -->
@@ -1678,9 +1758,15 @@
                 <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
             </svelte:fragment>
             <svelte:fragment slot="bottom">
-                {#if mockActive}
-                    <IconButton icon={LocationFilled} label={$_('mock_enabled')} active on:click={disableMocking} />
-                {/if}
+                <!-- always here, never only while it is on: it is both the
+                     state and the switch, and hiding it when off is what left
+                     the desktop with nothing to turn back on -->
+                <IconButton
+                    icon={LocationFilled}
+                    label={mockActive ? $_('stop_mocking') : $_('start_mocking')}
+                    active={mockActive}
+                    on:click={() => toggleMocking()}
+                />
                 <IconButton icon={Settings} label={$_('settings')} active={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)} />
             </svelte:fragment>
         </Rail>
@@ -1737,6 +1823,12 @@
             <IconButton icon={GameConsole} label={$_('manual_driving')} active={padOpen} on:click={() => (padOpen = !padOpen)} />
             <IconButton icon={DirectionFork} label={$_('build_route')} active={routeBuilderMode} on:click={() => toggleRouteBuilder()} />
             <IconButton icon={Location} label={$_('drop_pin')} active={placeMode} on:click={() => (placeMode = !placeMode)} />
+            <IconButton
+                icon={LocationFilled}
+                label={mockActive ? $_('stop_mocking') : $_('start_mocking')}
+                active={mockActive}
+                on:click={() => toggleMocking()}
+            />
         </div>
 
         {#if padOpen}
@@ -1980,6 +2072,42 @@
         inset: 0;
     }
 
+    .map-error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: min(420px, calc(100% - 32px));
+        padding: 16px;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+    }
+    .map-error p {
+        margin: 0;
+    }
+    .map-error-title {
+        font-size: 14px;
+        font-weight: 500;
+    }
+    .map-error-body {
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text-muted);
+    }
+    .map-error-detail {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-faint);
+        overflow-wrap: anywhere;
+    }
+
     /* ---- pointer shell ------------------------------------------------ */
 
     .rail-search {
@@ -2042,6 +2170,51 @@
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow);
+    }
+
+    /* shared by both shells; .rail-offset is the pointer one */
+    .mock-banner {
+        position: absolute;
+        top: calc(60px + var(--safe-top));
+        left: calc(8px + var(--safe-left));
+        /* clear of the map button column, which owns the right edge */
+        right: calc(66px + var(--safe-right));
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 6px 6px 10px;
+        font-size: 12px;
+        line-height: 1.35;
+        color: var(--warning-text);
+        /* --warning-soft is a tint meant to sit on a panel; this floats over the
+           map, so it needs an opaque surface underneath it to stay readable */
+        background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--surface);
+        border: 1px solid var(--warning);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+    }
+
+    /* off is a statement of fact, not a warning: same place, same shape, none
+       of the colour that means "your real GPS is gone" */
+    .mock-banner.off {
+        color: var(--text-muted);
+        background: var(--surface);
+        border-color: var(--border);
+    }
+
+    .mock-banner span {
+        flex: 1;
+        min-width: 0;
+    }
+
+    /* the pointer shell has the icon rail down the left and a search field
+       docked beside it, so the banner sits under both rather than across */
+    .mock-banner.rail-offset {
+        top: 56px;
+        left: 68px;
+        right: auto;
+        max-width: 420px;
     }
 
     .pad-dock {
